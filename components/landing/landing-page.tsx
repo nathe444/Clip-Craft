@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { btnGhost, btnPrimary, features, plans, platforms, workflow } from "./content";
 import { FaqList } from "./faq-list";
+import { HeroActions } from "./hero-actions";
 import { PlatformIcon } from "./icons";
 import { Navbar } from "./navbar";
 import { OverviewFrame } from "./overview-frame";
@@ -40,12 +41,7 @@ export function LandingPage() {
               YouTube, Instagram, TikTok, and email — all from one place.
             </p>
             <div className="hero-rise-late mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link href="/register" className={`${btnPrimary} h-11 px-5`}>
-                Start Creating Free
-              </Link>
-              <a href="#how-it-works" className={`${btnGhost} h-11 px-5`}>
-                See How It Works
-              </a>
+              <HeroActions />
             </div>
             <p className="mt-4 text-sm text-[var(--muted)]">No credit card required</p>
           </div>

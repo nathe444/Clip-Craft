@@ -1,5 +1,6 @@
 "use client";
 
+import { UserButton, useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { btnGhost, btnPrimary, navLinks } from "./content";
@@ -34,12 +35,7 @@ export function Navbar() {
           ))}
         </ul>
         <div className="ml-auto flex items-center gap-2">
-          <Link href="/login" className="px-2 text-sm font-medium text-[var(--text)] hover:text-white">
-            Log in
-          </Link>
-          <Link href="/register" className={btnPrimary}>
-            Get Started
-          </Link>
+          <AccountActions />
           <button
             type="button"
             className="inline-flex h-10 items-center px-2 text-sm font-medium lg:hidden"
@@ -66,16 +62,73 @@ export function Navbar() {
               </li>
             ))}
           </ul>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Link href="/login" className={btnGhost} onClick={() => setOpen(false)}>
-              Log in
-            </Link>
-            <Link href="/register" className={btnPrimary} onClick={() => setOpen(false)}>
-              Get Started
-            </Link>
+          <div className="mt-3">
+            <AccountActions menu onNavigate={() => setOpen(false)} />
           </div>
         </div>
       ) : null}
     </header>
+  );
+}
+
+function AccountActions({
+  menu = false,
+  onNavigate,
+}: {
+  menu?: boolean;
+  onNavigate?: () => void;
+}) {
+  const clerkReady = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+  if (!clerkReady) {
+    return <GuestActions menu={menu} onNavigate={onNavigate} />;
+  }
+  return <ClerkAccountActions menu={menu} onNavigate={onNavigate} />;
+}
+
+function ClerkAccountActions({
+  menu = false,
+  onNavigate,
+}: {
+  menu?: boolean;
+  onNavigate?: () => void;
+}) {
+  const { isSignedIn } = useAuth();
+
+  if (isSignedIn) {
+    return <UserButton />;
+  }
+
+  return <GuestActions menu={menu} onNavigate={onNavigate} />;
+}
+
+function GuestActions({
+  menu = false,
+  onNavigate,
+}: {
+  menu?: boolean;
+  onNavigate?: () => void;
+}) {
+  if (menu) {
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        <Link href="/login" className={btnGhost} onClick={onNavigate}>
+          Log in
+        </Link>
+        <Link href="/register" className={btnPrimary} onClick={onNavigate}>
+          Get Started
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Link href="/login" className="px-2 text-sm font-medium text-[var(--text)] hover:text-white">
+        Log in
+      </Link>
+      <Link href="/register" className={btnPrimary}>
+        Get Started
+      </Link>
+    </>
   );
 }

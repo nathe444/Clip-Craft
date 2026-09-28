@@ -1,12 +1,24 @@
-import { type NextRequest } from "next/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
+import { type NextFetchEvent, type NextRequest } from "next/server";
+import { hasClerkEnv } from "@/lib/clerk/env";
 import { updateSession } from "@/lib/supabase/proxy";
 
-export async function proxy(request: NextRequest) {
+const handleClerk = clerkMiddleware(async (_auth, request) => {
   return updateSession(request);
+});
+
+export async function proxy(request: NextRequest, event: NextFetchEvent) {
+  if (!hasClerkEnv()) {
+    return updateSession(request);
+  }
+
+  return handleClerk(request, event);
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
+    "/__clerk/(.*)",
   ],
 };

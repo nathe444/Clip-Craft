@@ -141,6 +141,44 @@
   color-scheme: dark;
 }
 
+.dashboard {
+  --dash-bg: #f4f4f5;
+  --dash-panel: #ffffff;
+  --dash-ink: #111214;
+  --dash-muted: #6d6d75;
+  --dash-line: #ececef;
+  --dash-create: #d7e4fb;
+  --dash-create-text: #1f3f7a;
+  background: var(--dash-panel);
+  color: var(--dash-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+}
+
+.dashboard :focus-visible {
+  outline: 2px solid #111214;
+  outline-offset: 3px;
+}
+
+.dash-create {
+  display: inline-flex;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 0.7rem;
+  background: var(--dash-create);
+  color: var(--dash-create-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: filter 160ms ease;
+}
+
+.dash-create:hover {
+  filter: brightness(0.97);
+}
+
 .landing ::selection {
   background: #f4f4f5;
   color: #09090b;

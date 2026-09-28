@@ -1,51 +1,44 @@
-import type { Metadata } from "next";
-import { UserButton } from "@clerk/nextjs";
-import { currentUser } from "@clerk/nextjs/server";
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { Mark } from "@/components/landing/icons";
-import { clerkDisplayName, clerkEmail, syncClerkUser } from "@/lib/users";
+"use client";
 
-export const metadata: Metadata = {
-  title: "Dashboard — ClipCraft",
-  description: "Your ClipCraft workspace.",
-};
+import { useEffect, useState } from "react";
+import { type ClipSeries, readSeries, SERIES_CHANGED } from "@/components/dashboard/series-store";
 
-export default async function DashboardPage() {
-  const user = await currentUser();
-  if (!user) redirect("/login");
+export default function SeriesPage() {
+  const [series, setSeries] = useState<ClipSeries[]>([]);
 
-  const email = clerkEmail(user);
-  const name = email ? clerkDisplayName(user, email) : user.username || "there";
-  const saved = await syncClerkUser(user);
+  useEffect(() => {
+    const sync = () => setSeries(readSeries());
+    sync();
+    window.addEventListener(SERIES_CHANGED, sync);
+    return () => window.removeEventListener(SERIES_CHANGED, sync);
+  }, []);
+
+  if (series.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-medium tracking-[-0.03em]">No series yet</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--dash-muted)]">
+            Create a series to generate short videos and schedule them across YouTube, Instagram,
+            TikTok, and email.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="landing min-h-full">
-      <header className="border-b border-[var(--line)]">
-        <div className="mx-auto flex h-16 max-w-5xl items-center px-5">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <Mark className="size-6" />
-            ClipCraft
-          </Link>
-          <div className="ml-auto">
-            <UserButton />
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-5 py-16">
-        <p className="text-sm text-[var(--muted)]">Workspace</p>
-        <h1 className="mt-3 text-4xl font-medium tracking-[-0.045em] text-balance">
-          {name}
-        </h1>
-        {email ? <p className="mt-3 text-base text-[var(--muted)]">{email}</p> : null}
-        {saved.ok ? (
-          <p className="mt-8 text-sm text-[var(--muted)]">Name and email are saved to your account.</p>
-        ) : (
-          <p className="mt-8 max-w-xl rounded-xl border border-[var(--line)] bg-[#101114] px-4 py-3 text-sm leading-6 text-[var(--muted)]">
-            {saved.error}
-          </p>
-        )}
-      </main>
+    <div className="mx-auto max-w-3xl px-6 py-10">
+      <ul className="divide-y divide-[var(--dash-line)] rounded-2xl border border-[var(--dash-line)]">
+        {series.map((item) => (
+          <li key={item.id} className="px-5 py-4">
+            <p className="text-sm font-medium">{item.name}</p>
+            <p className="mt-1 text-xs text-[var(--dash-muted)]">
+              Created {new Date(item.createdAt).toLocaleString()}
+            </p>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

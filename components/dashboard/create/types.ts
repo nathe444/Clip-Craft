@@ -23,15 +23,18 @@ export interface CreateSeriesFormData {
   backgroundMusicId: string;
   musicVolume: number; // 0 to 100
 
-  // Step 4: Script & Theme
-  scriptTopic: string;
-  pacing: string;
-
-  // Step 5: Visuals
+  // Step 4: Visual Style
   visualStyle: string;
 
-  // Step 6: Captions
+  // Step 5: Captions
   captionStyle: string;
+  captionDensity: "1-2-words" | "3-5-words";
+  captionPosition: "middle" | "bottom";
+  captionColor: string;
+
+  // Step 6: Script & Review
+  scriptTopic: string;
+  pacing: string;
 }
 
 export interface StepConfig {
@@ -66,24 +69,24 @@ export const STEPS: StepConfig[] = [
   },
   {
     id: 4,
-    key: "script-story",
-    title: "Script & Storyline",
-    shortLabel: "Script & Story",
-    description: "Configure storytelling duration, hooks, and narrative pace.",
+    key: "video-style",
+    title: "Video Visual Style",
+    shortLabel: "Video Style",
+    description: "Select the AI visual generation aesthetic and cinematic mood for your clips.",
   },
   {
     id: 5,
-    key: "visual-style",
-    title: "Media & Visual Style",
-    shortLabel: "Visuals",
-    description: "Pick AI image generation aesthetic and clip transitions.",
+    key: "caption-style",
+    title: "Dynamic Caption Style",
+    shortLabel: "Captions",
+    description: "Choose dynamic animated subtitle templates and customize colors and positioning.",
   },
   {
     id: 6,
-    key: "captions-review",
-    title: "Captions & Review",
+    key: "script-review",
+    title: "Script & Review",
     shortLabel: "Review",
-    description: "Customize dynamic caption animations and start generation.",
+    description: "Configure storytelling duration, topic prompt, and launch generation.",
   },
 ];
 

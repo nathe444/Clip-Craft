@@ -7,6 +7,8 @@ import { StepperProgress } from "./stepper-progress";
 import { NicheSelectionStep } from "./niche-selection-step";
 import { LanguageVoiceStep } from "./language-voice-step";
 import { BackgroundMusicStep } from "./background-music-step";
+import { VideoStyleStep } from "./video-style-step";
+import { CaptionStyleStep } from "./caption-style-step";
 import { AVAILABLE_NICHES, STEPS, type CreateSeriesFormData } from "./types";
 
 export function MultistepCreateSeries() {
@@ -20,10 +22,13 @@ export function MultistepCreateSeries() {
     voiceModel: "aura-2-zeus-en",
     backgroundMusicId: "horror-suspense",
     musicVolume: 18,
+    visualStyle: "cinematic",
+    captionStyle: "hormozi-pop",
+    captionDensity: "1-2-words",
+    captionPosition: "middle",
+    captionColor: "#FACC15",
     scriptTopic: "",
     pacing: "Fast-Paced",
-    visualStyle: "cinematic",
-    captionStyle: "karaoke-glow",
   });
 
   const activeNicheName =
@@ -109,8 +114,46 @@ export function MultistepCreateSeries() {
           />
         )}
 
-        {/* Steps 4–6: placeholder */}
-        {currentStep >= 4 && (
+        {/* Step 4: Video Visual Style */}
+        {currentStep === 4 && (
+          <VideoStyleStep
+            selectedNicheId={formData.selectedNicheId}
+            visualStyle={formData.visualStyle}
+            onChangeVisualStyle={(styleId) =>
+              setFormData((p) => ({ ...p, visualStyle: styleId }))
+            }
+            onBack={handleBack}
+            onContinue={handleNext}
+          />
+        )}
+
+        {/* Step 5: Dynamic Caption Style */}
+        {currentStep === 5 && (
+          <CaptionStyleStep
+            selectedNicheId={formData.selectedNicheId}
+            captionStyle={formData.captionStyle}
+            captionDensity={formData.captionDensity}
+            captionPosition={formData.captionPosition}
+            captionColor={formData.captionColor}
+            onChangeCaptionStyle={(styleId) =>
+              setFormData((p) => ({ ...p, captionStyle: styleId }))
+            }
+            onChangeCaptionDensity={(density) =>
+              setFormData((p) => ({ ...p, captionDensity: density }))
+            }
+            onChangeCaptionPosition={(pos) =>
+              setFormData((p) => ({ ...p, captionPosition: pos }))
+            }
+            onChangeCaptionColor={(color) =>
+              setFormData((p) => ({ ...p, captionColor: color }))
+            }
+            onBack={handleBack}
+            onContinue={handleNext}
+          />
+        )}
+
+        {/* Step 6: placeholder */}
+        {currentStep >= 6 && (
           <div className="space-y-8">
             <div>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--dash-ink)]">
@@ -128,9 +171,13 @@ export function MultistepCreateSeries() {
                 Language: <strong className="text-[var(--dash-ink)]">{formData.language}</strong>
                 {" · "}
                 Music: <strong className="text-[var(--dash-ink)]">{formData.backgroundMusicId}</strong>
+                {" · "}
+                Style: <strong className="text-[var(--dash-ink)]">{formData.visualStyle}</strong>
+                {" · "}
+                Captions: <strong className="text-[var(--dash-ink)]">{formData.captionStyle}</strong>
               </p>
               <p className="mt-2 text-xs text-[var(--dash-muted)]">
-                This step will be implemented next.
+                This final step will be implemented next.
               </p>
             </div>
 

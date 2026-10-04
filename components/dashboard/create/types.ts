@@ -16,19 +16,22 @@ export interface CreateSeriesFormData {
   customNicheDescription: string;
 
   // Step 2: Language & Voice
-  language: string;
-  voiceStyle: string;
+  language: string;     // locale, e.g. "en-us"
+  voiceModel: string;   // deepgram model id, e.g. "aura-2-zeus-en"
 
-  // Step 3: Script & Theme
+  // Step 3: Background Music
+  backgroundMusicId: string;
+  musicVolume: number; // 0 to 100
+
+  // Step 4: Script & Theme
   scriptTopic: string;
   pacing: string;
 
-  // Step 4: Visuals
+  // Step 5: Visuals
   visualStyle: string;
 
-  // Step 5: Captions
+  // Step 6: Captions
   captionStyle: string;
-  backgroundMusic: string;
 }
 
 export interface StepConfig {
@@ -56,31 +59,31 @@ export const STEPS: StepConfig[] = [
   },
   {
     id: 3,
+    key: "background-music",
+    title: "Background Music",
+    shortLabel: "Music & Audio",
+    description: "Pick ambient soundtrack and configure audio volume mix.",
+  },
+  {
+    id: 4,
     key: "script-story",
     title: "Script & Storyline",
     shortLabel: "Script & Story",
     description: "Configure storytelling duration, hooks, and narrative pace.",
   },
   {
-    id: 4,
+    id: 5,
     key: "visual-style",
     title: "Media & Visual Style",
     shortLabel: "Visuals",
     description: "Pick AI image generation aesthetic and clip transitions.",
   },
   {
-    id: 5,
-    key: "captions-audio",
-    title: "Captions & Audio",
-    shortLabel: "Captions & Audio",
-    description: "Customize dynamic caption animations and ambient soundtrack.",
-  },
-  {
     id: 6,
-    key: "review-generate",
-    title: "Review & Generate",
+    key: "captions-review",
+    title: "Captions & Review",
     shortLabel: "Review",
-    description: "Verify your settings and start generating your first video batch.",
+    description: "Customize dynamic caption animations and start generation.",
   },
 ];
 

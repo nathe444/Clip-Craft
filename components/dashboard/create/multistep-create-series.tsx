@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { StepperProgress } from "./stepper-progress";
 import { NicheSelectionStep } from "./niche-selection-step";
 import { LanguageVoiceStep } from "./language-voice-step";
+import { BackgroundMusicStep } from "./background-music-step";
 import { AVAILABLE_NICHES, STEPS, type CreateSeriesFormData } from "./types";
 
 export function MultistepCreateSeries() {
@@ -15,13 +16,14 @@ export function MultistepCreateSeries() {
     selectedNicheId: "scary-stories",
     customNicheTitle: "",
     customNicheDescription: "",
-    language: "en-US",
-    voiceStyle: "deep-dramatic",
+    language: "en-us",
+    voiceModel: "aura-2-zeus-en",
+    backgroundMusicId: "horror-suspense",
+    musicVolume: 18,
     scriptTopic: "",
     pacing: "Fast-Paced",
     visualStyle: "cinematic",
     captionStyle: "karaoke-glow",
-    backgroundMusic: "dark-ambient",
   });
 
   const activeNicheName =
@@ -82,16 +84,33 @@ export function MultistepCreateSeries() {
         {currentStep === 2 && (
           <LanguageVoiceStep
             language={formData.language}
-            voiceStyle={formData.voiceStyle}
+            voiceModel={formData.voiceModel}
             onChangeLanguage={(lang) => setFormData((p) => ({ ...p, language: lang }))}
-            onChangeVoiceStyle={(voice) => setFormData((p) => ({ ...p, voiceStyle: voice }))}
+            onChangeVoiceModel={(model) => setFormData((p) => ({ ...p, voiceModel: model }))}
             onBack={handleBack}
             onContinue={handleNext}
           />
         )}
 
-        {/* Steps 3–6: placeholder */}
-        {currentStep >= 3 && (
+        {/* Step 3: Background Music */}
+        {currentStep === 3 && (
+          <BackgroundMusicStep
+            selectedNicheId={formData.selectedNicheId}
+            backgroundMusicId={formData.backgroundMusicId}
+            musicVolume={formData.musicVolume}
+            onChangeBackgroundMusic={(id) =>
+              setFormData((p) => ({ ...p, backgroundMusicId: id }))
+            }
+            onChangeMusicVolume={(vol) =>
+              setFormData((p) => ({ ...p, musicVolume: vol }))
+            }
+            onBack={handleBack}
+            onContinue={handleNext}
+          />
+        )}
+
+        {/* Steps 4–6: placeholder */}
+        {currentStep >= 4 && (
           <div className="space-y-8">
             <div>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--dash-ink)]">
@@ -107,6 +126,8 @@ export function MultistepCreateSeries() {
                 Niche: <strong className="text-[var(--dash-ink)]">{activeNicheName}</strong>
                 {" · "}
                 Language: <strong className="text-[var(--dash-ink)]">{formData.language}</strong>
+                {" · "}
+                Music: <strong className="text-[var(--dash-ink)]">{formData.backgroundMusicId}</strong>
               </p>
               <p className="mt-2 text-xs text-[var(--dash-muted)]">
                 This step will be implemented next.

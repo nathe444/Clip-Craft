@@ -27,10 +27,14 @@ export function DashboardSidebar({
           <Mark className="size-7" />
           ClipCraft
         </Link>
-        <button type="button" className="dash-create mt-5 w-full" onClick={onCreate}>
+        <Link
+          href="/dashboard/create"
+          className="dash-create mt-5 w-full inline-flex items-center justify-center gap-1.5"
+          onClick={onNavigate}
+        >
           <span aria-hidden="true">+</span>
           Create New Series
-        </button>
+        </Link>
       </div>
       <nav aria-label="Workspace" className="flex-1 px-3">
         <ul className="space-y-0.5">

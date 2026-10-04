@@ -9,6 +9,9 @@ export const dashboardNav = [
 export type DashboardNavIcon = (typeof dashboardNav)[number]["icon"];
 
 export function dashboardTitle(pathname: string) {
+  if (pathname === "/dashboard/create" || pathname.startsWith("/dashboard/create")) {
+    return "Create Series";
+  }
   const match = dashboardNav.find((item) =>
     item.href === "/dashboard" ? pathname === "/dashboard" : pathname === item.href || pathname.startsWith(`${item.href}/`),
   );

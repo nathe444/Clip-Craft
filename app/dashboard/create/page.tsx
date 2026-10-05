@@ -1,11 +1,22 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { MultistepCreateSeries } from "@/components/dashboard/create/multistep-create-series";
 
 export const metadata: Metadata = {
-  title: "Create New Series — ClipCraft",
-  description: "Create a new automated short video series with AI.",
+  title: "Create / Edit Series — ClipCraft",
+  description: "Create or edit your automated short video series with AI.",
 };
 
 export default function CreateSeriesPage() {
-  return <MultistepCreateSeries />;
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-96 items-center justify-center text-sm text-zinc-500">
+          Loading series editor...
+        </div>
+      }
+    >
+      <MultistepCreateSeries />
+    </Suspense>
+  );
 }

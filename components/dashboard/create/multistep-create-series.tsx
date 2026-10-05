@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { StepperProgress } from "./stepper-progress";
 import { NicheSelectionStep } from "./niche-selection-step";
@@ -20,6 +20,10 @@ import { type ClipSeries, readSeries, saveSeries } from "@/components/dashboard/
 
 export function MultistepCreateSeries() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("id") || searchParams.get("edit");
+  const isEditing = Boolean(editId);
+
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<CreateSeriesFormData>({
@@ -41,6 +45,66 @@ export function MultistepCreateSeries() {
     platforms: ["tiktok", "instagram", "youtube"],
     publishTime: "12:00 AM",
   });
+
+  // Load existing series data when in edit mode
+  useEffect(() => {
+    if (!editId) return;
+
+    let isMounted = true;
+
+    async function loadSeriesData() {
+      // 1. Check local store first
+      const local = readSeries();
+      const foundLocal = local.find((s) => s.id === editId);
+
+      if (foundLocal && isMounted) {
+        setFormData((prev) => ({
+          ...prev,
+          seriesName: foundLocal.name,
+          duration: foundLocal.duration || "30-50",
+          platforms: foundLocal.platforms || ["tiktok", "instagram", "youtube"],
+          publishTime: foundLocal.publishTime || "12:00 AM",
+        }));
+      }
+
+      // 2. Fetch full data from Supabase API
+      try {
+        const res = await fetch(`/api/series?id=${encodeURIComponent(editId!)}`);
+        const json = await res.json().catch(() => null);
+
+        if (json?.ok && json.series && isMounted) {
+          const s = json.series;
+          setFormData({
+            nicheType: s.niche_type || "available",
+            selectedNicheId: s.selected_niche_id || "scary-stories",
+            customNicheTitle: s.custom_niche_title || "",
+            customNicheDescription: s.custom_niche_description || "",
+            language: s.language || "en-us",
+            voiceModel: s.voice_model || "aura-2-zeus-en",
+            backgroundMusicId: s.background_music_id || "horror-suspense",
+            musicVolume: typeof s.music_volume === "number" ? s.music_volume : 18,
+            visualStyle: s.visual_style || "cinematic",
+            captionStyle: s.caption_style || "hormozi-pop",
+            captionDensity: s.caption_density || "1-2-words",
+            captionPosition: s.caption_position || "middle",
+            captionColor: s.caption_color || "#FACC15",
+            seriesName: s.series_name || "",
+            duration: s.duration || "30-50",
+            platforms: Array.isArray(s.platforms) ? s.platforms : ["tiktok", "instagram", "youtube"],
+            publishTime: s.publish_time || "12:00 AM",
+          });
+        }
+      } catch (err) {
+        console.error("Could not load series for editing:", err);
+      }
+    }
+
+    loadSeriesData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [editId]);
 
   const activeNicheName =
     formData.nicheType === "available"
@@ -82,53 +146,75 @@ export function MultistepCreateSeries() {
     setIsSubmitting(true);
     try {
       const finalSeriesName = formData.seriesName.trim() || `${activeNicheName} Daily`;
-      
-      // 1. Post to Supabase database API endpoint
-      const res = await fetch("/api/series", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          seriesName: finalSeriesName,
-        }),
-      });
 
-      const json = await res.json().catch(() => null);
+      if (isEditing) {
+        // 1. PATCH updates to Supabase database
+        await fetch("/api/series", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editId,
+            ...formData,
+            seriesName: finalSeriesName,
+          }),
+        });
 
-      // 2. Synchronize local store for instant optimistic render
-      const newSeries: ClipSeries = {
-        id: json?.series?.id || `series-${Date.now()}`,
-        name: finalSeriesName,
-        createdAt: Date.now(),
-        duration: formData.duration,
-        platforms: formData.platforms,
-        publishTime: formData.publishTime,
-        niche: activeNicheName,
-        voice: activeVoiceTitle,
-        music: activeMusicTitle,
-        visualStyle: activeVideoStyleTitle,
-        captionStyle: activeCaptionStyleTitle,
-      };
+        // 2. Synchronize local store
+        const existing = readSeries();
+        const updated = existing.map((item) =>
+          item.id === editId
+            ? {
+                ...item,
+                name: finalSeriesName,
+                duration: formData.duration,
+                platforms: formData.platforms,
+                publishTime: formData.publishTime,
+                niche: activeNicheName,
+                voice: activeVoiceTitle,
+                music: activeMusicTitle,
+                visualStyle: activeVideoStyleTitle,
+                captionStyle: activeCaptionStyleTitle,
+              }
+            : item
+        );
+        saveSeries(updated);
+      } else {
+        // 1. POST new series to Supabase database
+        const res = await fetch("/api/series", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...formData,
+            seriesName: finalSeriesName,
+          }),
+        });
 
-      const existing = readSeries();
-      saveSeries([newSeries, ...existing]);
+        const json = await res.json().catch(() => null);
 
-      // 3. Redirect user directly to dashboard page
+        // 2. Synchronize local store
+        const newSeries: ClipSeries = {
+          id: json?.series?.id || `series-${Date.now()}`,
+          name: finalSeriesName,
+          createdAt: Date.now(),
+          duration: formData.duration,
+          platforms: formData.platforms,
+          publishTime: formData.publishTime,
+          niche: activeNicheName,
+          voice: activeVoiceTitle,
+          music: activeMusicTitle,
+          visualStyle: activeVideoStyleTitle,
+          captionStyle: activeCaptionStyleTitle,
+        };
+
+        const existing = readSeries();
+        saveSeries([newSeries, ...existing]);
+      }
+
+      // 3. Redirect back to dashboard
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
       console.error("[SCHEDULE_ERROR]", err);
-      // Fallback: save to local store and redirect
-      const newSeries: ClipSeries = {
-        id: `series-${Date.now()}`,
-        name: formData.seriesName.trim() || `${activeNicheName} Daily`,
-        createdAt: Date.now(),
-        duration: formData.duration,
-        platforms: formData.platforms,
-        publishTime: formData.publishTime,
-        niche: activeNicheName,
-      };
-      saveSeries([newSeries, ...readSeries()]);
       router.push("/dashboard");
     } finally {
       setIsSubmitting(false);
@@ -146,9 +232,16 @@ export function MultistepCreateSeries() {
           <ArrowLeft className="size-4" />
           Dashboard
         </Link>
-        <span className="text-xs text-[var(--dash-muted)]">
-          Step {currentStep} of {STEPS.length}
-        </span>
+        <div className="flex items-center gap-2.5">
+          {isEditing && (
+            <span className="rounded-full bg-zinc-100 border border-zinc-200 px-3 py-0.5 text-xs font-semibold text-zinc-800">
+              Editing Series
+            </span>
+          )}
+          <span className="text-xs text-[var(--dash-muted)]">
+            Step {currentStep} of {STEPS.length}
+          </span>
+        </div>
       </div>
 
       {/* Card */}
@@ -262,6 +355,7 @@ export function MultistepCreateSeries() {
             onBack={handleBack}
             onSchedule={handleSchedule}
             isSubmitting={isSubmitting}
+            isEditing={isEditing}
           />
         )}
       </div>

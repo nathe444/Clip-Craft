@@ -21,22 +21,18 @@ export function DashboardSidebar({
       <div className="px-4 pt-5 pb-4">
         <Link
           href="/dashboard"
-          className="inline-flex items-center gap-2.5 text-[17px] font-bold tracking-tight text-zinc-900"
+          className="inline-flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.02em]"
           onClick={onNavigate}
         >
-          <div className="size-7 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-xs">
-            <svg viewBox="0 0 24 24" className="size-4 fill-white translate-x-0.5" aria-hidden="true">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </div>
-          VidMaxx
+          <Mark className="size-7" />
+          ClipCraft
         </Link>
         <Link
           href="/dashboard/create"
-          className="mt-5 w-full inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white text-sm font-semibold transition shadow-xs cursor-pointer"
+          className="dash-create mt-5 w-full inline-flex items-center justify-center gap-1.5"
           onClick={onNavigate}
         >
-          <span className="text-base leading-none font-bold">+</span>
+          <span aria-hidden="true">+</span>
           Create New Series
         </Link>
       </div>

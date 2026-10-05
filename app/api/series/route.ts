@@ -90,13 +90,30 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
     if (!hasSupabaseEnv()) {
-      return NextResponse.json({ ok: true, series: [] });
+      return NextResponse.json({ ok: true, series: id ? null : [] });
     }
 
     const supabase = await getSupabase();
+
+    if (id) {
+      const { data, error } = await supabase
+        .from("series")
+        .select("*")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 404 });
+      }
+      return NextResponse.json({ ok: true, series: data });
+    }
+
     let query = supabase
       .from("series")
       .select("*")
@@ -160,11 +177,59 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, ...updates } = body;
+    const { id } = body;
 
     if (!id) {
       return NextResponse.json({ ok: false, error: "Series ID is required" }, { status: 400 });
     }
+
+    const updates: Record<string, unknown> = {};
+    if (body.seriesName !== undefined || body.series_name !== undefined) {
+      updates.series_name = body.seriesName ?? body.series_name;
+    }
+    if (body.nicheType !== undefined || body.niche_type !== undefined) {
+      updates.niche_type = body.nicheType ?? body.niche_type;
+    }
+    if (body.selectedNicheId !== undefined || body.selected_niche_id !== undefined) {
+      updates.selected_niche_id = body.selectedNicheId ?? body.selected_niche_id;
+    }
+    if (body.customNicheTitle !== undefined || body.custom_niche_title !== undefined) {
+      updates.custom_niche_title = body.customNicheTitle ?? body.custom_niche_title;
+    }
+    if (body.customNicheDescription !== undefined || body.custom_niche_description !== undefined) {
+      updates.custom_niche_description = body.customNicheDescription ?? body.custom_niche_description;
+    }
+    if (body.language !== undefined) updates.language = body.language;
+    if (body.voiceModel !== undefined || body.voice_model !== undefined) {
+      updates.voice_model = body.voiceModel ?? body.voice_model;
+    }
+    if (body.backgroundMusicId !== undefined || body.background_music_id !== undefined) {
+      updates.background_music_id = body.backgroundMusicId ?? body.background_music_id;
+    }
+    if (body.musicVolume !== undefined || body.music_volume !== undefined) {
+      updates.music_volume = body.musicVolume ?? body.music_volume;
+    }
+    if (body.visualStyle !== undefined || body.visual_style !== undefined) {
+      updates.visual_style = body.visualStyle ?? body.visual_style;
+    }
+    if (body.captionStyle !== undefined || body.caption_style !== undefined) {
+      updates.caption_style = body.captionStyle ?? body.caption_style;
+    }
+    if (body.captionDensity !== undefined || body.caption_density !== undefined) {
+      updates.caption_density = body.captionDensity ?? body.caption_density;
+    }
+    if (body.captionPosition !== undefined || body.caption_position !== undefined) {
+      updates.caption_position = body.captionPosition ?? body.caption_position;
+    }
+    if (body.captionColor !== undefined || body.caption_color !== undefined) {
+      updates.caption_color = body.captionColor ?? body.caption_color;
+    }
+    if (body.duration !== undefined) updates.duration = body.duration;
+    if (body.platforms !== undefined) updates.platforms = body.platforms;
+    if (body.publishTime !== undefined || body.publish_time !== undefined) {
+      updates.publish_time = body.publishTime ?? body.publish_time;
+    }
+    if (body.status !== undefined) updates.status = body.status;
 
     if (!hasSupabaseEnv()) {
       return NextResponse.json({ ok: true, series: updates });

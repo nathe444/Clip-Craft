@@ -37,6 +37,7 @@ interface SeriesDetailsStepProps {
   onBack: () => void;
   onSchedule: () => void;
   isSubmitting?: boolean;
+  isEditing?: boolean;
 }
 
 // Inline SVGs for brand platform icons matching the wireframe
@@ -108,6 +109,7 @@ export function SeriesDetailsStep({
   onBack,
   onSchedule,
   isSubmitting = false,
+  isEditing = false,
 }: SeriesDetailsStepProps) {
   const [isTimeDropdownOpen, setIsTimeDropdownOpen] = useState(false);
   const [isDurationDropdownOpen, setIsDurationDropdownOpen] = useState(false);
@@ -487,12 +489,12 @@ export function SeriesDetailsStep({
           {isSubmitting ? (
             <>
               <div className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-              Scheduling...
+              {isEditing ? "Saving changes..." : "Scheduling..."}
             </>
           ) : (
             <>
               <Calendar className="size-4" />
-              Schedule
+              {isEditing ? "Save & Schedule" : "Schedule"}
             </>
           )}
         </button>

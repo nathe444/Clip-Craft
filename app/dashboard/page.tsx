@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Video,
@@ -16,7 +17,6 @@ import {
   Sparkles,
   Check,
   Loader2,
-  X,
 } from "lucide-react";
 import {
   type ClipSeries,
@@ -65,12 +65,11 @@ function formatSeriesDate(timestamp: number): string {
 }
 
 export default function SeriesPage() {
+  const router = useRouter();
   const [seriesList, setSeriesList] = useState<ClipSeries[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
-  const [editingSeries, setEditingSeries] = useState<ClipSeries | null>(null);
-  const [editNameInput, setEditNameInput] = useState("");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -215,30 +214,6 @@ export default function SeriesPage() {
     }, 1200);
   }
 
-  // Save series edit
-  async function handleSaveEdit() {
-    if (!editingSeries || !editNameInput.trim()) return;
-    const newName = editNameInput.trim();
-    const updated = seriesList.map((s) =>
-      s.id === editingSeries.id ? { ...s, name: newName } : s
-    );
-    setSeriesList(updated);
-    saveSeries(updated);
-
-    try {
-      await fetch("/api/series", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingSeries.id, series_name: newName }),
-      });
-      showToast("Series updated successfully");
-    } catch {
-      // Local state is already updated
-    }
-
-    setEditingSeries(null);
-  }
-
   return (
     <div className="mx-auto w-full max-w-7xl px-4 sm:px-8 lg:px-10 py-8 sm:py-10 space-y-8">
       {/* Toast Notification */}
@@ -260,7 +235,7 @@ export default function SeriesPage() {
 
         <Link
           href="/dashboard/create"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs hover:shadow-md cursor-pointer shrink-0 self-start sm:self-auto"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs hover:shadow-md cursor-pointer shrink-0 self-start sm:self-auto"
         >
           <Plus className="size-4 stroke-[2.5]" />
           New Series
@@ -313,10 +288,7 @@ export default function SeriesPage() {
                 {/* Top-Right Floating Edit Button */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingSeries(item);
-                    setEditNameInput(item.name);
-                  }}
+                  onClick={() => router.push(`/dashboard/create?id=${item.id}`)}
                   title="Edit Series"
                   className="absolute top-3.5 right-3.5 z-10 size-8 rounded-full bg-white/95 hover:bg-white text-zinc-700 hover:text-black shadow-md flex items-center justify-center transition-all hover:scale-105 cursor-pointer"
                 >
@@ -378,9 +350,8 @@ export default function SeriesPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setEditingSeries(item);
-                              setEditNameInput(item.name);
                               setOpenMenuId(null);
+                              router.push(`/dashboard/create?id=${item.id}`);
                             }}
                             className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 transition cursor-pointer text-left"
                           >
@@ -436,7 +407,7 @@ export default function SeriesPage() {
                     type="button"
                     onClick={() => handleGenerate(item)}
                     disabled={isGenerating}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-semibold py-2.5 px-3 transition shadow-xs cursor-pointer disabled:opacity-75 text-center"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white text-xs font-semibold py-2.5 px-3 transition shadow-xs cursor-pointer disabled:opacity-75 text-center"
                   >
                     {isGenerating ? (
                       <>
@@ -456,56 +427,6 @@ export default function SeriesPage() {
           );
         })}
       </div>
-
-      {/* Edit Series Modal */}
-      {editingSeries && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200 space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-zinc-900">Edit Series Name</h3>
-              <button
-                type="button"
-                onClick={() => setEditingSeries(null)}
-                className="size-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-500 hover:text-zinc-800 cursor-pointer"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="edit-series-name" className="block text-xs font-semibold text-zinc-700">
-                Series Name
-              </label>
-              <input
-                id="edit-series-name"
-                type="text"
-                value={editNameInput}
-                onChange={(e) => setEditNameInput(e.target.value)}
-                className="w-full rounded-xl border border-zinc-300 px-3.5 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5]"
-                placeholder="Enter series name"
-                autoFocus
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingSeries(null)}
-                className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] px-4 py-2 text-xs font-semibold text-white transition shadow-xs cursor-pointer"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

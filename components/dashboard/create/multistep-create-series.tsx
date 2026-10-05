@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Calendar, CheckCircle2, LayoutDashboard, PlusCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { StepperProgress } from "./stepper-progress";
 import { NicheSelectionStep } from "./niche-selection-step";
 import { LanguageVoiceStep } from "./language-voice-step";
@@ -22,7 +22,6 @@ export function MultistepCreateSeries() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isScheduledSuccess, setIsScheduledSuccess] = useState(false);
   const [formData, setFormData] = useState<CreateSeriesFormData>({
     nicheType: "available",
     selectedNicheId: "scary-stories",
@@ -79,12 +78,27 @@ export function MultistepCreateSeries() {
     });
   }
 
-  function handleSchedule() {
+  async function handleSchedule() {
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      const finalSeriesName = formData.seriesName.trim() || `${activeNicheName} Daily`;
+      
+      // 1. Post to Supabase database API endpoint
+      const res = await fetch("/api/series", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          seriesName: finalSeriesName,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      // 2. Synchronize local store for instant optimistic render
       const newSeries: ClipSeries = {
-        id: `series-${Date.now()}`,
-        name: formData.seriesName.trim() || `${activeNicheName} Daily`,
+        id: json?.series?.id || `series-${Date.now()}`,
+        name: finalSeriesName,
         createdAt: Date.now(),
         duration: formData.duration,
         platforms: formData.platforms,
@@ -98,33 +112,27 @@ export function MultistepCreateSeries() {
 
       const existing = readSeries();
       saveSeries([newSeries, ...existing]);
-      setIsSubmitting(false);
-      setIsScheduledSuccess(true);
-    }, 700);
-  }
 
-  function handleReset() {
-    setFormData({
-      nicheType: "available",
-      selectedNicheId: "scary-stories",
-      customNicheTitle: "",
-      customNicheDescription: "",
-      language: "en-us",
-      voiceModel: "aura-2-zeus-en",
-      backgroundMusicId: "horror-suspense",
-      musicVolume: 18,
-      visualStyle: "cinematic",
-      captionStyle: "hormozi-pop",
-      captionDensity: "1-2-words",
-      captionPosition: "middle",
-      captionColor: "#FACC15",
-      seriesName: "",
-      duration: "30-50",
-      platforms: ["tiktok", "instagram", "youtube"],
-      publishTime: "12:00 AM",
-    });
-    setIsScheduledSuccess(false);
-    setCurrentStep(1);
+      // 3. Redirect user directly to dashboard page
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      console.error("[SCHEDULE_ERROR]", err);
+      // Fallback: save to local store and redirect
+      const newSeries: ClipSeries = {
+        id: `series-${Date.now()}`,
+        name: formData.seriesName.trim() || `${activeNicheName} Daily`,
+        createdAt: Date.now(),
+        duration: formData.duration,
+        platforms: formData.platforms,
+        publishTime: formData.publishTime,
+        niche: activeNicheName,
+      };
+      saveSeries([newSeries, ...readSeries()]);
+      router.push("/dashboard");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -257,63 +265,6 @@ export function MultistepCreateSeries() {
           />
         )}
       </div>
-
-      {/* Success Modal / Confirmation Dialog */}
-      {isScheduledSuccess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-[var(--dash-line)] text-center space-y-6 animate-in zoom-in-95 duration-200">
-            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-8 ring-emerald-50/50">
-              <CheckCircle2 className="size-8" />
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-[var(--dash-ink)]">
-                Series Successfully Scheduled!
-              </h3>
-              <p className="text-sm text-[var(--dash-muted)] leading-relaxed">
-                <strong className="text-[var(--dash-ink)] font-semibold">
-                  {formData.seriesName || `${activeNicheName} Daily`}
-                </strong>{" "}
-                is now active. Your automated pipeline will generate high-quality video clips 3-6 hours prior to your daily publish time at{" "}
-                <span className="font-semibold text-[var(--dash-ink)]">{formData.publishTime}</span>.
-              </p>
-            </div>
-
-            {/* Quick summary chips */}
-            <div className="rounded-2xl bg-zinc-50 border border-[var(--dash-line)] p-4 text-xs flex flex-wrap items-center justify-center gap-2">
-              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
-                Duration: {formData.duration} sec
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
-                Platforms: {formData.platforms.join(", ")}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
-                Time: {formData.publishTime}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard")}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white px-6 py-3 text-sm font-semibold transition cursor-pointer"
-              >
-                <LayoutDashboard className="size-4" />
-                Go to Dashboard
-              </button>
-
-              <button
-                type="button"
-                onClick={handleReset}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--dash-line)] bg-white hover:bg-zinc-50 text-[var(--dash-ink)] px-5 py-3 text-sm font-medium transition cursor-pointer"
-              >
-                <PlusCircle className="size-4" />
-                Create Another Series
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

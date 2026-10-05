@@ -5,12 +5,68 @@ import { type ClipSeries, readSeries, SERIES_CHANGED } from "@/components/dashbo
 
 export default function SeriesPage() {
   const [series, setSeries] = useState<ClipSeries[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const sync = () => setSeries(readSeries());
-    sync();
-    window.addEventListener(SERIES_CHANGED, sync);
-    return () => window.removeEventListener(SERIES_CHANGED, sync);
+    let mounted = true;
+
+    async function fetchDatabaseSeries() {
+      try {
+        const res = await fetch("/api/series");
+        const json = await res.json().catch(() => null);
+
+        if (json?.ok && Array.isArray(json.series) && json.series.length > 0 && mounted) {
+          interface DbSeries {
+            id: string;
+            series_name: string;
+            created_at: string;
+            duration?: "30-50" | "60-70";
+            platforms?: string[];
+            publish_time?: string;
+            custom_niche_title?: string;
+            selected_niche_id?: string;
+            voice_model?: string;
+            background_music_id?: string;
+            visual_style?: string;
+            caption_style?: string;
+          }
+
+          const dbSeries: ClipSeries[] = json.series.map((item: DbSeries) => ({
+            id: item.id,
+            name: item.series_name,
+            createdAt: new Date(item.created_at).getTime(),
+            duration: item.duration,
+            platforms: item.platforms,
+            publishTime: item.publish_time,
+            niche: item.custom_niche_title || item.selected_niche_id,
+            voice: item.voice_model,
+            music: item.background_music_id,
+            visualStyle: item.visual_style,
+            captionStyle: item.caption_style,
+          }));
+          setSeries(dbSeries);
+          setIsLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Could not fetch database series, falling back to local store:", err);
+      }
+
+      if (mounted) {
+        setSeries(readSeries());
+        setIsLoading(false);
+      }
+    }
+
+    const syncLocal = () => setSeries(readSeries());
+    syncLocal();
+    fetchDatabaseSeries();
+
+    window.addEventListener(SERIES_CHANGED, syncLocal);
+    return () => {
+      mounted = false;
+      window.removeEventListener(SERIES_CHANGED, syncLocal);
+    };
   }, []);
 
   if (series.length === 0) {

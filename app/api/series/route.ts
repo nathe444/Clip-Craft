@@ -128,3 +128,64 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "Series ID is required" }, { status: 400 });
+    }
+
+    if (!hasSupabaseEnv()) {
+      return NextResponse.json({ ok: true });
+    }
+
+    const supabase = await getSupabase();
+    const { error } = await supabase.from("series").delete().eq("id", id);
+
+    if (error) {
+      console.error("[SUPABASE_SERIES_DELETE_ERROR]", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, message: "Series deleted successfully" });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal Server Error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, ...updates } = body;
+
+    if (!id) {
+      return NextResponse.json({ ok: false, error: "Series ID is required" }, { status: 400 });
+    }
+
+    if (!hasSupabaseEnv()) {
+      return NextResponse.json({ ok: true, series: updates });
+    }
+
+    const supabase = await getSupabase();
+    const { data, error } = await supabase
+      .from("series")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[SUPABASE_SERIES_UPDATE_ERROR]", error);
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, series: data });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal Server Error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}

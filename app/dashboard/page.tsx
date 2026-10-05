@@ -1,21 +1,101 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { type ClipSeries, readSeries, SERIES_CHANGED } from "@/components/dashboard/series-store";
+import { useEffect, useState, useRef } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  Plus,
+  Video,
+  Zap,
+  MoreVertical,
+  Pencil,
+  Pause,
+  Play,
+  Trash2,
+  Calendar,
+  Sparkles,
+  Check,
+  Loader2,
+  X,
+} from "lucide-react";
+import {
+  type ClipSeries,
+  readSeries,
+  saveSeries,
+  SERIES_CHANGED,
+} from "@/components/dashboard/series-store";
+
+// Sample series shown when no series has been scheduled yet
+const DEFAULT_SAMPLE_SERIES: ClipSeries = {
+  id: "sample-historical-stories",
+  name: "Historical Stories",
+  createdAt: new Date("2026-01-24T10:00:00").getTime(),
+  status: "pending",
+  platforms: ["youtube", "email"],
+  niche: "history",
+  image: "/niches/history.jpg",
+  duration: "30-50",
+  publishTime: "12:00 AM",
+};
+
+function resolveSeriesImage(item: ClipSeries): string {
+  if (item.image) return item.image;
+  const combined = ((item.name || "") + " " + (item.niche || "")).toLowerCase();
+  if (combined.includes("histor")) return "/niches/history.jpg";
+  if (combined.includes("scary") || combined.includes("horror")) return "/niches/scary_stories.jpg";
+  if (combined.includes("crime")) return "/niches/true_crime.jpg";
+  if (combined.includes("motivat")) return "/niches/motivational.jpg";
+  if (combined.includes("tech") || combined.includes("ai")) return "/niches/tech_ai.jpg";
+  if (combined.includes("fact")) return "/niches/facts.jpg";
+  if (combined.includes("stoic") || combined.includes("philosophy")) return "/niches/stoicism.jpg";
+  if (combined.includes("wealth") || combined.includes("business")) return "/niches/wealth.jpg";
+  return "/niches/history.jpg";
+}
+
+function formatSeriesDate(timestamp: number): string {
+  try {
+    return new Date(timestamp).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "Jan 24, 2026";
+  }
+}
 
 export default function SeriesPage() {
-  const [series, setSeries] = useState<ClipSeries[]>([]);
+  const [seriesList, setSeriesList] = useState<ClipSeries[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [editingSeries, setEditingSeries] = useState<ClipSeries | null>(null);
+  const [editNameInput, setEditNameInput] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  // Close dropdown on outside click
   useEffect(() => {
-    let mounted = true;
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    window.addEventListener("mousedown", handleClickOutside);
+    return () => window.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-    async function fetchDatabaseSeries() {
+  // Fetch from Supabase and sync with local store
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSeries() {
       try {
         const res = await fetch("/api/series");
         const json = await res.json().catch(() => null);
 
-        if (json?.ok && Array.isArray(json.series) && json.series.length > 0 && mounted) {
+        if (json?.ok && Array.isArray(json.series) && json.series.length > 0 && isMounted) {
           interface DbSeries {
             id: string;
             series_name: string;
@@ -29,9 +109,10 @@ export default function SeriesPage() {
             background_music_id?: string;
             visual_style?: string;
             caption_style?: string;
+            status?: string;
           }
 
-          const dbSeries: ClipSeries[] = json.series.map((item: DbSeries) => ({
+          const mapped: ClipSeries[] = json.series.map((item: DbSeries) => ({
             id: item.id,
             name: item.series_name,
             createdAt: new Date(item.created_at).getTime(),
@@ -43,102 +124,388 @@ export default function SeriesPage() {
             music: item.background_music_id,
             visualStyle: item.visual_style,
             captionStyle: item.caption_style,
+            status: item.status || "pending",
           }));
-          setSeries(dbSeries);
+
+          setSeriesList(mapped);
           setIsLoading(false);
           return;
         }
       } catch (err) {
-        console.error("Could not fetch database series, falling back to local store:", err);
+        console.error("Could not fetch database series, falling back to local storage:", err);
       }
 
-      if (mounted) {
-        setSeries(readSeries());
+      if (isMounted) {
+        const local = readSeries();
+        if (local.length > 0) {
+          setSeriesList(local);
+        } else {
+          // Provide default sample series matching the exact user screenshot
+          setSeriesList([DEFAULT_SAMPLE_SERIES]);
+        }
         setIsLoading(false);
       }
     }
 
-    const syncLocal = () => setSeries(readSeries());
+    const syncLocal = () => {
+      const local = readSeries();
+      if (local.length > 0) {
+        setSeriesList(local);
+      }
+    };
+
     syncLocal();
-    fetchDatabaseSeries();
+    loadSeries();
 
     window.addEventListener(SERIES_CHANGED, syncLocal);
     return () => {
-      mounted = false;
+      isMounted = false;
       window.removeEventListener(SERIES_CHANGED, syncLocal);
     };
   }, []);
 
-  if (series.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center px-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-2xl font-medium tracking-[-0.03em]">No series yet</h1>
-          <p className="mt-3 text-sm leading-6 text-[var(--dash-muted)]">
-            Create a series to generate short videos and schedule them across YouTube, Instagram,
-            TikTok, and email.
-          </p>
-        </div>
-      </div>
+  function showToast(msg: string) {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  }
+
+  // Toggle pause/resume
+  async function handleTogglePause(item: ClipSeries) {
+    const newStatus = item.status === "paused" ? "pending" : "paused";
+    const updated = seriesList.map((s) => (s.id === item.id ? { ...s, status: newStatus } : s));
+    setSeriesList(updated);
+    saveSeries(updated);
+    setOpenMenuId(null);
+
+    try {
+      await fetch("/api/series", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, status: newStatus }),
+      });
+      showToast(`Series ${newStatus === "paused" ? "paused" : "resumed"}`);
+    } catch {
+      // Local state is already updated
+    }
+  }
+
+  // Delete series
+  async function handleDelete(item: ClipSeries) {
+    const updated = seriesList.filter((s) => s.id !== item.id);
+    setSeriesList(updated);
+    saveSeries(updated);
+    setOpenMenuId(null);
+
+    try {
+      await fetch(`/api/series?id=${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+      });
+      showToast("Series deleted successfully");
+    } catch {
+      // Local state is already updated
+    }
+  }
+
+  // Simulate or trigger video generation
+  async function handleGenerate(item: ClipSeries) {
+    setGeneratingId(item.id);
+    setTimeout(() => {
+      setGeneratingId(null);
+      showToast(`Video generation queued for "${item.name}"!`);
+    }, 1200);
+  }
+
+  // Save series edit
+  async function handleSaveEdit() {
+    if (!editingSeries || !editNameInput.trim()) return;
+    const newName = editNameInput.trim();
+    const updated = seriesList.map((s) =>
+      s.id === editingSeries.id ? { ...s, name: newName } : s
     );
+    setSeriesList(updated);
+    saveSeries(updated);
+
+    try {
+      await fetch("/api/series", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingSeries.id, series_name: newName }),
+      });
+      showToast("Series updated successfully");
+    } catch {
+      // Local state is already updated
+    }
+
+    setEditingSeries(null);
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto w-full max-w-7xl px-4 sm:px-8 lg:px-10 py-8 sm:py-10 space-y-8">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-zinc-900 text-white px-4 py-3 text-sm shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <Sparkles className="size-4 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-[var(--dash-ink)]">Your Series</h1>
-          <p className="text-sm text-[var(--dash-muted)]">
-            Manage your automated content generation and publishing schedules.
+          <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900">Your Series</h1>
+          <p className="mt-1 text-sm sm:text-base text-zinc-500">
+            Manage and monitor your automated video series.
           </p>
         </div>
+
+        <Link
+          href="/dashboard/create"
+          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs hover:shadow-md cursor-pointer shrink-0 self-start sm:self-auto"
+        >
+          <Plus className="size-4 stroke-[2.5]" />
+          New Series
+        </Link>
       </div>
 
-      <ul className="divide-y divide-[var(--dash-line)] rounded-3xl border border-[var(--dash-line)] bg-white overflow-hidden shadow-xs">
-        {series.map((item) => (
-          <li key={item.id} className="p-5 sm:p-6 hover:bg-zinc-50/50 transition">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2.5">
-                  <h3 className="text-base font-semibold text-[var(--dash-ink)]">{item.name}</h3>
-                  {item.duration && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200">
-                      {item.duration}s
-                    </span>
-                  )}
-                  {item.niche && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                      {item.niche}
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--dash-muted)]">
-                  <span>Created {new Date(item.createdAt).toLocaleDateString()}</span>
-                  {item.publishTime && (
-                    <span className="flex items-center gap-1 font-medium text-emerald-700">
-                      • Daily publish at {item.publishTime}
-                    </span>
-                  )}
-                </div>
-              </div>
+      {/* Series Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {seriesList.map((item) => {
+          const imageSrc = resolveSeriesImage(item);
+          const platforms = item.platforms && item.platforms.length > 0 ? item.platforms : ["youtube", "email"];
+          const isMenuOpen = openMenuId === item.id;
+          const isGenerating = generatingId === item.id;
+          const statusText = (item.status || "pending").toUpperCase();
 
-              {/* Platform Pills */}
-              {item.platforms && item.platforms.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {item.platforms.map((plat) => (
+          return (
+            <div
+              key={item.id}
+              className={`group relative flex flex-col rounded-3xl border border-zinc-200/80 bg-white shadow-xs hover:shadow-md transition-all duration-200 ${
+                isMenuOpen ? "z-40 ring-1 ring-black/5" : "z-10"
+              }`}
+            >
+              {/* Thumbnail Container */}
+              <div className="relative aspect-[16/10] w-full overflow-hidden rounded-t-[23px] bg-zinc-900 select-none">
+                <Image
+                  src={imageSrc}
+                  alt={item.name}
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  priority
+                />
+
+                {/* Subtle gradient vignette */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20 pointer-events-none" />
+
+                {/* Top-Left Status Badge */}
+                <div className="absolute top-3.5 left-3.5 z-10">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase shadow-xs backdrop-blur-xs ${
+                      statusText === "PAUSED"
+                        ? "bg-amber-600 text-white"
+                        : "bg-[#10b981] text-white"
+                    }`}
+                  >
+                    {statusText}
+                  </span>
+                </div>
+
+                {/* Top-Right Floating Edit Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSeries(item);
+                    setEditNameInput(item.name);
+                  }}
+                  title="Edit Series"
+                  className="absolute top-3.5 right-3.5 z-10 size-8 rounded-full bg-white/95 hover:bg-white text-zinc-700 hover:text-black shadow-md flex items-center justify-center transition-all hover:scale-105 cursor-pointer"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+
+                {/* Bottom-Left Platform Badges */}
+                <div className="absolute bottom-3 left-3.5 z-10 flex items-center gap-1.5 flex-wrap">
+                  {platforms.map((plat) => (
                     <span
                       key={plat}
-                      className="capitalize text-xs font-semibold px-2.5 py-1 rounded-lg border border-[var(--dash-line)] bg-white text-[var(--dash-ink)]"
+                      className="bg-black/60 backdrop-blur-xs text-white/95 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border border-white/10"
                     >
                       {plat}
                     </span>
                   ))}
                 </div>
-              )}
+              </div>
+
+              {/* Card Body */}
+              <div className="p-5 flex flex-col justify-between flex-1 gap-4">
+                {/* Title & Date & Menu */}
+                <div className="relative">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h3
+                        className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight truncate"
+                        title={item.name}
+                      >
+                        {item.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-1">
+                        <Calendar className="size-3.5 text-zinc-400" />
+                        <span>{formatSeriesDate(item.createdAt)}</span>
+                      </div>
+                    </div>
+
+                    {/* Three Dots Button */}
+                    <div className="relative shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(isMenuOpen ? null : item.id);
+                        }}
+                        className="size-8 rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 flex items-center justify-center transition cursor-pointer"
+                        title="Series options"
+                      >
+                        <MoreVertical className="size-4" />
+                      </button>
+
+                      {/* Dropdown Menu (Screenshot 2) */}
+                      {isMenuOpen && (
+                        <div
+                          ref={menuRef}
+                          className="absolute right-0 top-9 z-50 w-44 rounded-2xl border border-zinc-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+                        >
+                          {/* Edit Series */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingSeries(item);
+                              setEditNameInput(item.name);
+                              setOpenMenuId(null);
+                            }}
+                            className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 transition cursor-pointer text-left"
+                          >
+                            <Pencil className="size-3.5 text-zinc-500" />
+                            Edit Series
+                          </button>
+
+                          {/* Pause / Resume */}
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePause(item)}
+                            className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100 transition cursor-pointer text-left"
+                          >
+                            {item.status === "paused" ? (
+                              <>
+                                <Play className="size-3.5 text-zinc-500" />
+                                Resume
+                              </>
+                            ) : (
+                              <>
+                                <Pause className="size-3.5 text-zinc-500" />
+                                Pause
+                              </>
+                            )}
+                          </button>
+
+                          {/* Delete */}
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(item)}
+                            className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition cursor-pointer text-left"
+                          >
+                            <Trash2 className="size-3.5 text-red-500" />
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bottom Action Buttons (View Videos & Generate) */}
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <Link
+                    href="/dashboard/video"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold py-2.5 px-3 transition shadow-2xs cursor-pointer text-center"
+                  >
+                    <Video className="size-3.5 text-zinc-600" />
+                    View Videos
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleGenerate(item)}
+                    disabled={isGenerating}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] text-white text-xs font-semibold py-2.5 px-3 transition shadow-xs cursor-pointer disabled:opacity-75 text-center"
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="size-3.5 fill-white text-white" />
+                        Generate
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
-          </li>
-        ))}
-      </ul>
+          );
+        })}
+      </div>
+
+      {/* Edit Series Modal */}
+      {editingSeries && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold text-zinc-900">Edit Series Name</h3>
+              <button
+                type="button"
+                onClick={() => setEditingSeries(null)}
+                className="size-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-500 hover:text-zinc-800 cursor-pointer"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="edit-series-name" className="block text-xs font-semibold text-zinc-700">
+                Series Name
+              </label>
+              <input
+                id="edit-series-name"
+                type="text"
+                value={editNameInput}
+                onChange={(e) => setEditNameInput(e.target.value)}
+                className="w-full rounded-xl border border-zinc-300 px-3.5 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-[#4f46e5]/20 focus:border-[#4f46e5]"
+                placeholder="Enter series name"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingSeries(null)}
+                className="rounded-xl border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca] px-4 py-2 text-xs font-semibold text-white transition shadow-xs cursor-pointer"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

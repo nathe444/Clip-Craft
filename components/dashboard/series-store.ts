@@ -10,6 +10,8 @@ export type ClipSeries = {
   music?: string;
   visualStyle?: string;
   captionStyle?: string;
+  status?: string; // 'pending' | 'active' | 'paused' | 'completed'
+  image?: string;
 };
 
 const KEY = "clipcraft.series";

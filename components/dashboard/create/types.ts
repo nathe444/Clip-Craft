@@ -32,9 +32,15 @@ export interface CreateSeriesFormData {
   captionPosition: "middle" | "bottom";
   captionColor: string;
 
-  // Step 6: Script & Review
-  scriptTopic: string;
-  pacing: string;
+  // Step 6: Series Details & Scheduling
+  seriesName: string;
+  duration: "30-50" | "60-70";
+  platforms: string[]; // "tiktok" | "youtube" | "instagram" | "email"
+  publishTime: string; // e.g. "12:00 AM"
+
+  // Legacy/optional
+  scriptTopic?: string;
+  pacing?: string;
 }
 
 export interface StepConfig {
@@ -83,10 +89,10 @@ export const STEPS: StepConfig[] = [
   },
   {
     id: 6,
-    key: "script-review",
-    title: "Script & Review",
-    shortLabel: "Review",
-    description: "Configure storytelling duration, topic prompt, and launch generation.",
+    key: "series-details",
+    title: "Series Details",
+    shortLabel: "Details",
+    description: "Configure series name, duration, platforms, and publishing schedule.",
   },
 ];
 

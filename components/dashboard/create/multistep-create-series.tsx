@@ -2,17 +2,27 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, Calendar, CheckCircle2, LayoutDashboard, PlusCircle } from "lucide-react";
 import { StepperProgress } from "./stepper-progress";
 import { NicheSelectionStep } from "./niche-selection-step";
 import { LanguageVoiceStep } from "./language-voice-step";
 import { BackgroundMusicStep } from "./background-music-step";
 import { VideoStyleStep } from "./video-style-step";
 import { CaptionStyleStep } from "./caption-style-step";
+import { SeriesDetailsStep } from "./series-details-step";
 import { AVAILABLE_NICHES, STEPS, type CreateSeriesFormData } from "./types";
+import { DEEPGRAM_LANGUAGES } from "./deepgram-voices";
+import { BACKGROUND_MUSIC_TRACKS } from "./music-library";
+import { VIDEO_STYLES } from "./video-styles";
+import { CAPTION_STYLES } from "./caption-styles";
+import { type ClipSeries, readSeries, saveSeries } from "@/components/dashboard/series-store";
 
 export function MultistepCreateSeries() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isScheduledSuccess, setIsScheduledSuccess] = useState(false);
   const [formData, setFormData] = useState<CreateSeriesFormData>({
     nicheType: "available",
     selectedNicheId: "scary-stories",
@@ -27,8 +37,10 @@ export function MultistepCreateSeries() {
     captionDensity: "1-2-words",
     captionPosition: "middle",
     captionColor: "#FACC15",
-    scriptTopic: "",
-    pacing: "Fast-Paced",
+    seriesName: "",
+    duration: "30-50",
+    platforms: ["tiktok", "instagram", "youtube"],
+    publishTime: "12:00 AM",
   });
 
   const activeNicheName =
@@ -36,12 +48,83 @@ export function MultistepCreateSeries() {
       ? AVAILABLE_NICHES.find((n) => n.id === formData.selectedNicheId)?.title ?? "—"
       : formData.customNicheTitle || "Custom";
 
+  const activeVoiceTitle =
+    DEEPGRAM_LANGUAGES.flatMap((l) => l.voices).find((v) => v.model === formData.voiceModel)?.name ??
+    "AI Voice";
+
+  const activeMusicTitle =
+    BACKGROUND_MUSIC_TRACKS.find((m) => m.id === formData.backgroundMusicId)?.title ?? "Soundtrack";
+
+  const activeVideoStyleTitle =
+    VIDEO_STYLES.find((v) => v.id === formData.visualStyle)?.title ?? "Cinematic";
+
+  const activeCaptionStyleTitle =
+    CAPTION_STYLES.find((c) => c.id === formData.captionStyle)?.name ?? "Dynamic";
+
   function handleNext() {
     if (currentStep < STEPS.length) setCurrentStep((p) => p + 1);
   }
 
   function handleBack() {
     if (currentStep > 1) setCurrentStep((p) => p - 1);
+  }
+
+  function handleTogglePlatform(platformId: string) {
+    setFormData((prev) => {
+      const exists = prev.platforms.includes(platformId);
+      const updated = exists
+        ? prev.platforms.filter((p) => p !== platformId)
+        : [...prev.platforms, platformId];
+      return { ...prev, platforms: updated };
+    });
+  }
+
+  function handleSchedule() {
+    setIsSubmitting(true);
+    setTimeout(() => {
+      const newSeries: ClipSeries = {
+        id: `series-${Date.now()}`,
+        name: formData.seriesName.trim() || `${activeNicheName} Daily`,
+        createdAt: Date.now(),
+        duration: formData.duration,
+        platforms: formData.platforms,
+        publishTime: formData.publishTime,
+        niche: activeNicheName,
+        voice: activeVoiceTitle,
+        music: activeMusicTitle,
+        visualStyle: activeVideoStyleTitle,
+        captionStyle: activeCaptionStyleTitle,
+      };
+
+      const existing = readSeries();
+      saveSeries([newSeries, ...existing]);
+      setIsSubmitting(false);
+      setIsScheduledSuccess(true);
+    }, 700);
+  }
+
+  function handleReset() {
+    setFormData({
+      nicheType: "available",
+      selectedNicheId: "scary-stories",
+      customNicheTitle: "",
+      customNicheDescription: "",
+      language: "en-us",
+      voiceModel: "aura-2-zeus-en",
+      backgroundMusicId: "horror-suspense",
+      musicVolume: 18,
+      visualStyle: "cinematic",
+      captionStyle: "hormozi-pop",
+      captionDensity: "1-2-words",
+      captionPosition: "middle",
+      captionColor: "#FACC15",
+      seriesName: "",
+      duration: "30-50",
+      platforms: ["tiktok", "instagram", "youtube"],
+      publishTime: "12:00 AM",
+    });
+    setIsScheduledSuccess(false);
+    setCurrentStep(1);
   }
 
   return (
@@ -152,67 +235,85 @@ export function MultistepCreateSeries() {
           />
         )}
 
-        {/* Step 6: placeholder */}
-        {currentStep >= 6 && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--dash-ink)]">
-                {STEPS[currentStep - 1]?.title}
-              </h2>
-              <p className="mt-1.5 text-sm text-[var(--dash-muted)]">
-                {STEPS[currentStep - 1]?.description}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-dashed border-[var(--dash-line)] p-10 text-center">
-              <p className="text-sm text-[var(--dash-muted)]">
-                Niche: <strong className="text-[var(--dash-ink)]">{activeNicheName}</strong>
-                {" · "}
-                Language: <strong className="text-[var(--dash-ink)]">{formData.language}</strong>
-                {" · "}
-                Music: <strong className="text-[var(--dash-ink)]">{formData.backgroundMusicId}</strong>
-                {" · "}
-                Style: <strong className="text-[var(--dash-ink)]">{formData.visualStyle}</strong>
-                {" · "}
-                Captions: <strong className="text-[var(--dash-ink)]">{formData.captionStyle}</strong>
-              </p>
-              <p className="mt-2 text-xs text-[var(--dash-muted)]">
-                This final step will be implemented next.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-[var(--dash-line)]">
-              <button
-                type="button"
-                onClick={handleBack}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--dash-line)] bg-white px-5 py-2.5 text-sm font-medium text-[var(--dash-ink)] hover:bg-[var(--dash-bg)] transition cursor-pointer"
-              >
-                <ArrowLeft className="size-4" />
-                Back
-              </button>
-
-              {currentStep < STEPS.length ? (
-                <button
-                  type="button"
-                  onClick={handleNext}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white px-7 py-3 text-sm font-semibold transition cursor-pointer"
-                >
-                  Continue
-                  <ArrowRight className="size-4" />
-                </button>
-              ) : (
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center gap-2 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white px-7 py-3 text-sm font-semibold transition"
-                >
-                  <Check className="size-4" />
-                  Finish setup
-                </Link>
-              )}
-            </div>
-          </div>
+        {/* Step 6: Series Details & Scheduling */}
+        {currentStep === 6 && (
+          <SeriesDetailsStep
+            seriesName={formData.seriesName}
+            duration={formData.duration}
+            platforms={formData.platforms}
+            publishTime={formData.publishTime}
+            selectedNicheTitle={activeNicheName}
+            selectedVoiceTitle={activeVoiceTitle}
+            selectedMusicTitle={activeMusicTitle}
+            selectedVisualStyleTitle={activeVideoStyleTitle}
+            selectedCaptionStyleTitle={activeCaptionStyleTitle}
+            onChangeSeriesName={(name) => setFormData((p) => ({ ...p, seriesName: name }))}
+            onChangeDuration={(dur) => setFormData((p) => ({ ...p, duration: dur }))}
+            onTogglePlatform={handleTogglePlatform}
+            onChangePublishTime={(time) => setFormData((p) => ({ ...p, publishTime: time }))}
+            onBack={handleBack}
+            onSchedule={handleSchedule}
+            isSubmitting={isSubmitting}
+          />
         )}
       </div>
+
+      {/* Success Modal / Confirmation Dialog */}
+      {isScheduledSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-[var(--dash-line)] text-center space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 ring-8 ring-emerald-50/50">
+              <CheckCircle2 className="size-8" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-[var(--dash-ink)]">
+                Series Successfully Scheduled!
+              </h3>
+              <p className="text-sm text-[var(--dash-muted)] leading-relaxed">
+                <strong className="text-[var(--dash-ink)] font-semibold">
+                  {formData.seriesName || `${activeNicheName} Daily`}
+                </strong>{" "}
+                is now active. Your automated pipeline will generate high-quality video clips 3-6 hours prior to your daily publish time at{" "}
+                <span className="font-semibold text-[var(--dash-ink)]">{formData.publishTime}</span>.
+              </p>
+            </div>
+
+            {/* Quick summary chips */}
+            <div className="rounded-2xl bg-zinc-50 border border-[var(--dash-line)] p-4 text-xs flex flex-wrap items-center justify-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
+                Duration: {formData.duration} sec
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
+                Platforms: {formData.platforms.join(", ")}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 font-medium text-zinc-700">
+                Time: {formData.publishTime}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard")}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--dash-ink)] hover:bg-zinc-800 text-white px-6 py-3 text-sm font-semibold transition cursor-pointer"
+              >
+                <LayoutDashboard className="size-4" />
+                Go to Dashboard
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReset}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--dash-line)] bg-white hover:bg-zinc-50 text-[var(--dash-ink)] px-5 py-3 text-sm font-medium transition cursor-pointer"
+              >
+                <PlusCircle className="size-4" />
+                Create Another Series
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

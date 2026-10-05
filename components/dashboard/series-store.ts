@@ -2,6 +2,14 @@ export type ClipSeries = {
   id: string;
   name: string;
   createdAt: number;
+  duration?: "30-50" | "60-70";
+  platforms?: string[];
+  publishTime?: string;
+  niche?: string;
+  voice?: string;
+  music?: string;
+  visualStyle?: string;
+  captionStyle?: string;
 };
 
 const KEY = "clipcraft.series";

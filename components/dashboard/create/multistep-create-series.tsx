@@ -122,7 +122,7 @@ export function MultistepCreateSeries() {
     VIDEO_STYLES.find((v) => v.id === formData.visualStyle)?.title ?? "Cinematic";
 
   const activeCaptionStyleTitle =
-    CAPTION_STYLES.find((c) => c.id === formData.captionStyle)?.name ?? "Dynamic";
+    CAPTION_STYLES.find((c) => c.id === formData.captionStyle)?.title ?? "Dynamic";
 
   function handleNext() {
     if (currentStep < STEPS.length) setCurrentStep((p) => p + 1);

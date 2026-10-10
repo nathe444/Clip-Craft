@@ -2,6 +2,7 @@ import { inngest } from "../client";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase/env";
 import { createAdminClient, hasSupabaseSecretKey } from "@/lib/supabase/admin";
+import { generateVideoScript, type VideoScriptOutput } from "@/lib/ai/generate-script";
 
 export interface GenerateVideoEventData {
   seriesId: string;
@@ -104,25 +105,22 @@ export const generateVideo = inngest.createFunction(
     });
 
     // =========================================================================
-    // STEP 2: Generate Video Script using AI (Placeholder)
+    // STEP 2: Generate Video Script using AI (Google Gen AI - Gemini)
     // =========================================================================
-    const script = await step.run("generate-video-script-ai", async () => {
-      // Placeholder: Connect AI model (e.g. Gemini, OpenAI) to generate script
-      // and visual scene image prompts based on series.series_name, niche, visual style
-      return {
-        title: series.series_name || "AI Generated Video",
-        hook: "Did you know this mysterious fact lost to history?",
-        bodyText:
-          "Deep within the archives lies a secret that historians debated for centuries. Today, we uncover the shocking truth.",
-        callToAction: "Follow for more forgotten history every day.",
-        durationSeconds: 45,
-        imagePrompts: [
-          `Scene 1: Dramatic cinematic establishing shot of ancient library with moonbeams, style ${series.visual_style || "cinematic"}, 8k resolution`,
-          `Scene 2: Close-up of aged parchment and glowing golden relic, hyper-detailed, style ${series.visual_style || "cinematic"}`,
-          `Scene 3: Mysterious silhouette walking into foggy cobblestone street at dusk, cinematic atmosphere`,
-        ],
-      };
-    });
+    const script: VideoScriptOutput = await step.run(
+      "generate-video-script-ai",
+      async () => {
+        return await generateVideoScript({
+          seriesName: series.series_name,
+          niche: series.selected_niche_id,
+          customNicheTitle: series.custom_niche_title,
+          customNicheDescription: series.custom_niche_description,
+          visualStyle: series.visual_style,
+          duration: series.duration,
+          language: series.language,
+        });
+      }
+    );
 
     // =========================================================================
     // STEP 3: Generate Voice using TTS model (Placeholder)
@@ -162,26 +160,19 @@ export const generateVideo = inngest.createFunction(
     // STEP 5: Generate Images from image prompt data from Step 2 (Placeholder)
     // =========================================================================
     const images = await step.run("generate-images-from-prompts", async () => {
-      // Placeholder: Call Image Generation AI (e.g. Flux, Imagen, DALL-E) for each prompt
+      // Placeholder: Call Image Generation AI (e.g. Flux, Imagen, DALL-E) for each prompt from Step 2
+      const generatedImages = script.imagePrompts.map((prompt, index) => ({
+        sceneNumber: index + 1,
+        promptIndex: index,
+        prompt,
+        imageUrl: `https://images.unsplash.com/photo-${1518709268805 + index}?w=1080&q=80`,
+        aspectRatio: "9:16",
+      }));
+
       return {
+        totalPrompts: script.imagePrompts.length,
         promptsUsed: script.imagePrompts,
-        generatedImages: [
-          {
-            promptIndex: 0,
-            imageUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&q=80",
-            aspectRatio: "9:16",
-          },
-          {
-            promptIndex: 1,
-            imageUrl: "https://images.unsplash.com/photo-1461360370896-922624d12aa1?w=1080&q=80",
-            aspectRatio: "9:16",
-          },
-          {
-            promptIndex: 2,
-            imageUrl: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1080&q=80",
-            aspectRatio: "9:16",
-          },
-        ],
+        generatedImages,
       };
     });
 
@@ -192,7 +183,7 @@ export const generateVideo = inngest.createFunction(
       // Placeholder: Persist final video record, generated assets, and status to Supabase
       return {
         seriesId: series.id,
-        videoTitle: script.title,
+        videoTitle: script.videoTitle,
         status: "completed",
         videoUrl: "https://placeholder.video/sample-render.mp4",
         thumbnailUrl: images.generatedImages[0]?.imageUrl || null,

@@ -205,13 +205,32 @@ export default function SeriesPage() {
     }
   }
 
-  // Simulate or trigger video generation
+  // Trigger Inngest video generation workflow
   async function handleGenerate(item: ClipSeries) {
-    setGeneratingId(item.id);
-    setTimeout(() => {
+    try {
+      setGeneratingId(item.id);
+      const res = await fetch("/api/series/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seriesId: item.id,
+          seriesName: item.name,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || "Failed to trigger video generation");
+      }
+
+      showToast(`Video generation started for "${item.name}"!`);
+    } catch (err: unknown) {
+      console.error("[HANDLE_GENERATE_ERROR]", err);
+      const msg = err instanceof Error ? err.message : "Failed to queue generation";
+      showToast(`Error: ${msg}`);
+    } finally {
       setGeneratingId(null);
-      showToast(`Video generation queued for "${item.name}"!`);
-    }, 1200);
+    }
   }
 
   return (

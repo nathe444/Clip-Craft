@@ -224,6 +224,8 @@ export default function SeriesPage() {
       }
 
       showToast(`Video generation started for "${item.name}"!`);
+      // Immediately navigate to the video status page for this series
+      router.push(`/dashboard/video?seriesId=${encodeURIComponent(item.id)}`);
     } catch (err: unknown) {
       console.error("[HANDLE_GENERATE_ERROR]", err);
       const msg = err instanceof Error ? err.message : "Failed to queue generation";
@@ -415,7 +417,7 @@ export default function SeriesPage() {
                 {/* Bottom Action Buttons (View Videos & Generate) */}
                 <div className="grid grid-cols-2 gap-2.5 pt-1">
                   <Link
-                    href="/dashboard/video"
+                    href={`/dashboard/video?seriesId=${encodeURIComponent(item.id)}`}
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 text-xs font-semibold py-2.5 px-3 transition shadow-2xs cursor-pointer text-center"
                   >
                     <Video className="size-3.5 text-zinc-600" />

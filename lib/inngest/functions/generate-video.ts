@@ -4,6 +4,11 @@ import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase/env";
 import { createAdminClient, hasSupabaseSecretKey } from "@/lib/supabase/admin";
 import { generateVideoScript, type VideoScriptOutput } from "@/lib/ai/generate-script";
 import { generateVoiceover, type VoiceoverOutput } from "@/lib/ai/generate-voice";
+import { generateCaptions, type CaptionsOutput } from "@/lib/ai/generate-captions";
+import { generateImagesForScenes, type GenerateImagesOutput } from "@/lib/ai/generate-images";
+import { updateVideoProgress, type GeneratedVideoRecord } from "@/lib/video/video-store";
+import { renderCompositionToMp4 } from "@/lib/remotion/lambda";
+import type { VideoCompositionProps } from "@/remotion/types";
 
 export interface GenerateVideoEventData {
   seriesId: string;
@@ -58,6 +63,14 @@ export const generateVideo = inngest.createFunction(
     // STEP 1: Fetch Series data from Supabase (Real Logic)
     // =========================================================================
     const series = await step.run("fetch-series-from-supabase", async () => {
+      await updateVideoProgress({
+        seriesId: data.seriesId,
+        seriesName: data.seriesName,
+        currentStep: 1,
+        progressPercent: 12,
+        status: "generating",
+      });
+
       // Graceful fallback for sample dummy series during UI previews
       if (data.seriesId.startsWith("sample-")) {
         return {
@@ -111,6 +124,14 @@ export const generateVideo = inngest.createFunction(
     const script: VideoScriptOutput = await step.run(
       "generate-video-script-ai",
       async () => {
+        await updateVideoProgress({
+          seriesId: series.id,
+          seriesName: series.series_name,
+          currentStep: 2,
+          progressPercent: 30,
+          status: "generating",
+        });
+
         return await generateVideoScript({
           seriesName: series.series_name,
           niche: series.selected_niche_id,
@@ -127,6 +148,14 @@ export const generateVideo = inngest.createFunction(
     // STEP 3: Generate Voice using Deepgram TTS Model
     // =========================================================================
     const voice: VoiceoverOutput = await step.run("generate-voice-tts", async () => {
+      await updateVideoProgress({
+        seriesId: series.id,
+        seriesName: series.series_name,
+        currentStep: 3,
+        progressPercent: 50,
+        status: "generating",
+      });
+
       const supabase = hasSupabaseEnv() ? getWorkerSupabaseClient() : null;
       return await generateVoiceover({
         text: script.fullScript,
@@ -140,62 +169,113 @@ export const generateVideo = inngest.createFunction(
     });
 
     // =========================================================================
-    // STEP 4: Generate Caption using Model (Placeholder)
+    // STEP 4: Generate Captions using Deepgram STT Model
     // =========================================================================
-    const captions = await step.run("generate-captions", async () => {
-      // Placeholder: Generate word-level timed captions and typography metadata
-      return {
-        captionStyle: series.caption_style || "hormozi-pop",
-        captionDensity: series.caption_density || "1-2-words",
-        captionPosition: series.caption_position || "middle",
-        accentColor: series.caption_color || "#FACC15",
-        subtitles: [
-          { start: 0.0, end: 1.2, text: "DID YOU KNOW" },
-          { start: 1.2, end: 2.8, text: "THIS SHOCKING FACT" },
-          { start: 2.8, end: 4.5, text: "LOST TO HISTORY?" },
-        ],
-      };
+    const captions: CaptionsOutput = await step.run("generate-captions", async () => {
+      await updateVideoProgress({
+        seriesId: series.id,
+        seriesName: series.series_name,
+        currentStep: 4,
+        progressPercent: 70,
+        status: "generating",
+      });
+
+      return await generateCaptions({
+        audioUrl: voice.audioUrl,
+        fullScript: script.fullScript,
+        durationSeconds: voice.durationSeconds,
+        captionStyle: series.caption_style,
+        captionDensity: series.caption_density,
+        captionPosition: series.caption_position,
+        captionColor: series.caption_color,
+        language: series.language,
+      });
     });
 
     // =========================================================================
-    // STEP 5: Generate Images from image prompt data from Step 2 (Placeholder)
+    // STEP 5: Generate Visuals for Each Scene
     // =========================================================================
-    const images = await step.run("generate-images-from-prompts", async () => {
-      // Placeholder: Call Image Generation AI (e.g. Flux, Imagen, DALL-E) for each prompt from Step 2
-      const generatedImages = script.imagePrompts.map((prompt, index) => ({
-        sceneNumber: index + 1,
-        promptIndex: index,
-        prompt,
-        imageUrl: `https://images.unsplash.com/photo-${1518709268805 + index}?w=1080&q=80`,
-        aspectRatio: "9:16",
-      }));
+    const images: GenerateImagesOutput = await step.run(
+      "generate-images-from-prompts",
+      async () => {
+        await updateVideoProgress({
+          seriesId: series.id,
+          seriesName: series.series_name,
+          currentStep: 5,
+          progressPercent: 88,
+          status: "generating",
+        });
 
-      return {
-        totalPrompts: script.imagePrompts.length,
-        promptsUsed: script.imagePrompts,
-        generatedImages,
-      };
-    });
+        const supabase = hasSupabaseEnv() ? getWorkerSupabaseClient() : null;
+        return await generateImagesForScenes({
+          imagePrompts: script.imagePrompts,
+          seriesId: series.id,
+          visualStyle: series.visual_style,
+          supabase,
+        });
+      }
+    );
 
     // =========================================================================
-    // STEP 6: Save everything to database (Placeholder)
+    // STEP 6: Render Remotion composition to MP4 & save to database
     // =========================================================================
     const savedResult = await step.run("save-everything-to-database", async () => {
-      // Placeholder: Persist final video record, generated assets, and status to Supabase
-      return {
+      const supabase = hasSupabaseEnv() ? getWorkerSupabaseClient() : null;
+
+      // 1. Prepare Remotion Video Composition Props
+      const compositionProps: VideoCompositionProps = {
+        title: script.videoTitle,
+        durationInSeconds: voice.durationSeconds,
+        voiceoverAudioUrl: voice.audioUrl,
+        backgroundMusicUrl: series.background_music_id
+          ? `/music/${series.background_music_id}.mp3`
+          : null,
+        musicVolume: series.music_volume ?? 18,
+        scenes: images.generatedImages.map((img, idx) => ({
+          sceneNumber: img.sceneNumber,
+          imageUrl: img.imageUrl,
+          prompt: img.prompt,
+          spokenText: script.scenes[idx]?.spokenText || "",
+        })),
+        subtitles: captions.subtitles,
+        captionStyle: series.caption_style || "hormozi-pop",
+        captionColor: series.caption_color || "#FACC15",
+        captionPosition: series.caption_position || "middle",
+        captionDensity: series.caption_density || "1-2-words",
+      };
+
+      // 2. Render Remotion Composition to MP4 using AWS Lambda
+      const renderResult = await renderCompositionToMp4(compositionProps);
+
+      // 3. Construct and save the finalized video record with the rendered MP4 URL
+      const videoRecord: GeneratedVideoRecord = {
+        id: `vid-${series.id}-${Date.now()}`,
         seriesId: series.id,
+        seriesName: series.series_name,
         videoTitle: script.videoTitle,
-        status: "completed",
-        videoUrl: "https://placeholder.video/sample-render.mp4",
         thumbnailUrl: images.generatedImages[0]?.imageUrl || null,
+        videoUrl: renderResult.videoUrl || voice.audioUrl,
+        status: "completed",
         metadata: {
           script,
           voice,
           captions,
           images: images.generatedImages,
         },
-        savedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       };
+
+      await updateVideoProgress({
+        seriesId: series.id,
+        seriesName: series.series_name,
+        currentStep: 6,
+        progressPercent: 100,
+        status: "completed",
+        video: videoRecord,
+        supabase,
+      });
+
+      return videoRecord;
     });
 
     return {

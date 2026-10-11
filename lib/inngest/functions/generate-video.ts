@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase/env";
 import { createAdminClient, hasSupabaseSecretKey } from "@/lib/supabase/admin";
 import { generateVideoScript, type VideoScriptOutput } from "@/lib/ai/generate-script";
+import { generateVoiceover, type VoiceoverOutput } from "@/lib/ai/generate-voice";
 
 export interface GenerateVideoEventData {
   seriesId: string;
@@ -123,19 +124,19 @@ export const generateVideo = inngest.createFunction(
     );
 
     // =========================================================================
-    // STEP 3: Generate Voice using TTS model (Placeholder)
+    // STEP 3: Generate Voice using Deepgram TTS Model
     // =========================================================================
-    const voice = await step.run("generate-voice-tts", async () => {
-      // Placeholder: Call TTS API (e.g. Deepgram Aura / ElevenLabs) using series.voice_model
-      return {
-        voiceModel: series.voice_model || "aura-2-zeus-en",
-        language: series.language || "en-us",
-        audioUrl: "https://placeholder.audio/generated-voiceover-sample.mp3",
-        durationSeconds: 42.5,
-        format: "mp3",
-        backgroundMusicId: series.background_music_id || "horror-suspense",
-        musicVolume: series.music_volume ?? 18,
-      };
+    const voice: VoiceoverOutput = await step.run("generate-voice-tts", async () => {
+      const supabase = hasSupabaseEnv() ? getWorkerSupabaseClient() : null;
+      return await generateVoiceover({
+        text: script.fullScript,
+        voiceModel: series.voice_model,
+        language: series.language,
+        seriesId: series.id,
+        backgroundMusicId: series.background_music_id,
+        musicVolume: series.music_volume,
+        supabase,
+      });
     });
 
     // =========================================================================

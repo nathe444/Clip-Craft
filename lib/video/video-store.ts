@@ -51,6 +51,145 @@ if (!globalForVideos.completedVideosStore) {
 export const videoProgressStore = globalForVideos.videoProgressStore;
 export const completedVideosStore = globalForVideos.completedVideosStore;
 
+const globalVideoIndex = globalThis as unknown as {
+  allCompletedVideos: Map<string, GeneratedVideoRecord>;
+};
+
+if (!globalVideoIndex.allCompletedVideos) {
+  globalVideoIndex.allCompletedVideos = new Map();
+}
+
+export const allCompletedVideos = globalVideoIndex.allCompletedVideos;
+
+export interface VideoCatalogItem {
+  id: string;
+  seriesId: string;
+  seriesName: string;
+  videoTitle: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number;
+  sceneCount: number;
+  createdAt: string;
+}
+
+const VIDEO_BUCKET = "video-records";
+
+export function toCatalogItem(video: GeneratedVideoRecord): VideoCatalogItem {
+  return {
+    id: video.id,
+    seriesId: video.seriesId,
+    seriesName: video.seriesName || "Series",
+    videoTitle: video.videoTitle,
+    thumbnailUrl: video.thumbnailUrl,
+    durationSeconds: Math.round(video.metadata?.voice?.durationSeconds || 0),
+    sceneCount: video.metadata?.images?.length || video.metadata?.script?.scenes?.length || 0,
+    createdAt: video.createdAt,
+  };
+}
+
+function rememberVideo(video: GeneratedVideoRecord) {
+  allCompletedVideos.set(video.id, video);
+  completedVideosStore.set(video.seriesId, video);
+}
+
+async function ensureVideoBucket(supabase: SupabaseClient) {
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if (!buckets?.some((bucket) => bucket.name === VIDEO_BUCKET)) {
+    await supabase.storage.createBucket(VIDEO_BUCKET, { public: false });
+  }
+}
+
+async function persistVideoRecord(supabase: SupabaseClient, video: GeneratedVideoRecord) {
+  await ensureVideoBucket(supabase);
+  const body = JSON.stringify(video);
+  const { error: recordError } = await supabase.storage
+    .from(VIDEO_BUCKET)
+    .upload(`records/${video.id}.json`, Buffer.from(body), {
+      contentType: "application/json",
+      upsert: true,
+    });
+  if (recordError) throw recordError;
+
+  const existing = await readCatalog(supabase);
+  const next = [toCatalogItem(video), ...existing.filter((item) => item.id !== video.id)];
+  const { error: catalogError } = await supabase.storage
+    .from(VIDEO_BUCKET)
+    .upload("catalog.json", Buffer.from(JSON.stringify(next)), {
+      contentType: "application/json",
+      upsert: true,
+    });
+  if (catalogError) throw catalogError;
+}
+
+async function readCatalog(supabase: SupabaseClient): Promise<VideoCatalogItem[]> {
+  const { data, error } = await supabase.storage.from(VIDEO_BUCKET).download("catalog.json");
+  if (error || !data) return [];
+  const parsed = JSON.parse(await data.text()) as VideoCatalogItem[];
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+export async function listVideoCatalog(supabase?: SupabaseClient | null): Promise<VideoCatalogItem[]> {
+  const byId = new Map<string, VideoCatalogItem>();
+
+  if (supabase) {
+    try {
+      for (const item of await readCatalog(supabase)) {
+        byId.set(item.id, item);
+      }
+    } catch (err) {
+      console.warn("[VIDEO_CATALOG_READ]", err);
+    }
+  }
+
+  for (const video of allCompletedVideos.values()) {
+    byId.set(video.id, toCatalogItem(video));
+  }
+  for (const video of completedVideosStore.values()) {
+    byId.set(video.id, toCatalogItem(video));
+  }
+
+  if (supabase) {
+    const storedIds = new Set<string>();
+    try {
+      for (const item of await readCatalog(supabase)) storedIds.add(item.id);
+    } catch {
+      storedIds.clear();
+    }
+    for (const video of [...allCompletedVideos.values(), ...completedVideosStore.values()]) {
+      if (storedIds.has(video.id)) continue;
+      storedIds.add(video.id);
+      try {
+        await persistVideoRecord(supabase, video);
+      } catch (err) {
+        console.warn("[VIDEO_RECORD_BACKFILL]", err);
+      }
+    }
+  }
+
+  return Array.from(byId.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function getVideoById(
+  videoId: string,
+  supabase?: SupabaseClient | null,
+): Promise<GeneratedVideoRecord | null> {
+  const cached = allCompletedVideos.get(videoId);
+  if (cached) return cached;
+
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase.storage.from(VIDEO_BUCKET).download(`records/${videoId}.json`);
+    if (error || !data) return null;
+    const record = JSON.parse(await data.text()) as GeneratedVideoRecord;
+    rememberVideo(record);
+    return record;
+  } catch (err) {
+    console.warn("[VIDEO_RECORD_READ]", err);
+    return null;
+  }
+}
+
 export const STEP_LABELS: Record<number, string> = {
   1: "Setting up series and audio preferences...",
   2: "Writing engaging script and scene concepts...",
@@ -102,29 +241,14 @@ export async function updateVideoProgress(params: {
   videoProgressStore.set(seriesId, state);
 
   if (video && status === "completed") {
-    completedVideosStore.set(seriesId, video);
+    rememberVideo(video);
   }
 
-  // Attempt to persist to Supabase if client is available
-  if (supabase) {
+  if (supabase && status === "completed" && video) {
     try {
-      if (status === "completed" && video) {
-        // Try inserting into videos table if exists
-        await supabase
-          .from("videos")
-          .upsert({
-            id: video.id,
-            series_id: seriesId,
-            video_title: video.videoTitle,
-            status: "completed",
-            thumbnail_url: video.thumbnailUrl,
-            video_url: video.videoUrl,
-            metadata: video.metadata,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "id" });
-      }
-    } catch {
-      // Gracefully continue with in-memory cache
+      await persistVideoRecord(supabase, video);
+    } catch (err) {
+      console.warn("[VIDEO_RECORD_SAVE]", err);
     }
   }
 
@@ -198,6 +322,29 @@ export async function getVideoState(
       }
     } catch {
       // Supabase table query fallback
+    }
+  }
+
+  if (supabase) {
+    try {
+      const latest = (await listVideoCatalog(supabase)).find((item) => item.seriesId === seriesId);
+      if (latest) {
+        const record = await getVideoById(latest.id, supabase);
+        if (record) {
+          return {
+            seriesId,
+            seriesName: record.seriesName,
+            status: "completed",
+            currentStep: 6,
+            stepLabel: "Video ready!",
+            progressPercent: 100,
+            updatedAt: Date.now(),
+            video: record,
+          };
+        }
+      }
+    } catch {
+      // Catalog is optional when storage is unavailable.
     }
   }
 

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { VideoProgressState, GeneratedVideoRecord } from "@/lib/video/video-store";
 import { LiveProgress } from "@/components/dashboard/video/live-progress";
+import { VideoLibrary, type VideoSeriesGroup } from "@/components/dashboard/video/video-library";
 import { VideoPlayer } from "@/components/dashboard/video/video-player";
 import { Storyboard } from "@/components/dashboard/video/storyboard";
 
@@ -35,8 +36,10 @@ function VideoContent() {
   const router = useRouter();
 
   const querySeriesId = searchParams.get("seriesId");
+  const queryVideoId = searchParams.get("videoId");
 
   const [seriesList, setSeriesList] = useState<SeriesItem[]>([]);
+  const [groups, setGroups] = useState<VideoSeriesGroup[]>([]);
   const [selectedSeriesId, setSelectedSeriesId] = useState<string>(querySeriesId || "");
   const [videoState, setVideoState] = useState<VideoProgressState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -92,15 +95,58 @@ function VideoContent() {
     }
   }, []);
 
-  // Initial load
-  useEffect(() => {
-    if (selectedSeriesId) {
-      setIsLoading(true);
-      fetchVideoState(selectedSeriesId);
-    } else {
+  const loadLibrary = useCallback(async () => {
+    try {
+      const res = await fetch("/api/videos");
+      const data = await res.json();
+      if (data?.ok && Array.isArray(data.groups)) {
+        setGroups(data.groups);
+      }
+    } catch (err) {
+      console.error("Failed to load video library:", err);
+    } finally {
       setIsLoading(false);
     }
-  }, [selectedSeriesId, fetchVideoState]);
+  }, []);
+
+  useEffect(() => {
+    if (queryVideoId) {
+      setIsLoading(true);
+      fetch(`/api/videos?videoId=${encodeURIComponent(queryVideoId)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.ok && data.video) {
+            setVideoState({
+              seriesId: data.video.seriesId,
+              seriesName: data.video.seriesName,
+              status: "completed",
+              currentStep: 6,
+              stepLabel: "Video ready!",
+              progressPercent: 100,
+              updatedAt: Date.now(),
+              video: data.video,
+            });
+          }
+        })
+        .finally(() => setIsLoading(false));
+      return;
+    }
+
+    if (querySeriesId) {
+      setIsLoading(true);
+      fetchVideoState(querySeriesId);
+      return;
+    }
+
+    loadLibrary();
+  }, [queryVideoId, querySeriesId, fetchVideoState, loadLibrary]);
+
+  useEffect(() => {
+    if (queryVideoId || querySeriesId) return;
+    if (!groups.some((group) => group.progress)) return;
+    const interval = setInterval(loadLibrary, 2500);
+    return () => clearInterval(interval);
+  }, [groups, queryVideoId, querySeriesId, loadLibrary]);
 
   // Polling loop when status === "generating"
   useEffect(() => {
@@ -153,15 +199,26 @@ function VideoContent() {
   const isGenerating = videoState?.status === "generating";
   const isCompleted = videoState?.status === "completed" && Boolean(currentVideo);
 
+  if (!querySeriesId && !queryVideoId) {
+    return isLoading ? (
+      <div className="flex flex-col items-center justify-center py-24 space-y-4">
+        <Loader2 className="size-8 animate-spin text-zinc-900" />
+        <p className="text-sm text-zinc-500 font-medium">Loading videos...</p>
+      </div>
+    ) : (
+      <VideoLibrary groups={groups} />
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 sm:px-8 lg:px-10 py-8 sm:py-10 space-y-8">
       {/* Top Breadcrumb & Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200/80 pb-6">
         <div className="flex items-center gap-3">
           <Link
-            href="/dashboard"
+            href={queryVideoId ? "/dashboard/video" : "/dashboard"}
             className="flex size-9 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50 transition cursor-pointer"
-            title="Back to series"
+            title={queryVideoId ? "Back to videos" : "Back to series"}
           >
             <ArrowLeft className="size-4" />
           </Link>

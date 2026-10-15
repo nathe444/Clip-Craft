@@ -209,6 +209,9 @@ export const generateVideo = inngest.createFunction(
         const supabase = hasSupabaseEnv() ? getWorkerSupabaseClient() : null;
         return await generateImagesForScenes({
           imagePrompts: script.imagePrompts,
+          scenes: script.scenes,
+          visualAnchor: script.visualAnchor,
+          niche: series.selected_niche_id || series.custom_niche_title,
           seriesId: series.id,
           visualStyle: series.visual_style,
           supabase,

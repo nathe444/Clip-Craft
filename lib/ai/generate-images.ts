@@ -3,6 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
+import { InferenceClient } from "@huggingface/inference";
+import { VIDEO_STYLES } from "@/components/dashboard/create/video-styles";
+import { stableImageSeed } from "@/lib/ai/scene-prompt";
 
 // Prefer IPv4 to avoid Windows Node.js fetch DNS issues
 try {
@@ -19,7 +22,11 @@ export interface GeneratedSceneImage {
   storagePath?: string | null;
   storageType: "supabase" | "local" | "pollinations" | "data-uri";
   aspectRatio: "9:16";
-  modelUsed: "google-imagen" | "pollinations-flux" | "photographic-stock";
+  modelUsed:
+    | "huggingface-flux"
+    | "huggingface-sdxl"
+    | "google-imagen"
+    | "pollinations-flux";
 }
 
 export interface GenerateImagesOutput {
@@ -30,129 +37,33 @@ export interface GenerateImagesOutput {
 
 export interface GenerateImagesParams {
   imagePrompts: string[];
+  scenes?: Array<{ spokenText?: string; imagePrompt?: string }>;
+  visualAnchor?: string | null;
+  niche?: string | null;
   seriesId?: string;
   visualStyle?: string | null;
   supabase?: SupabaseClient | null;
 }
 
-// Curated high-resolution vertical 9:16 photography for popular video themes
-const THEMATIC_COLLECTIONS: Record<string, string[]> = {
-  history: [
-    "https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=1080&h=1920&fit=crop", // Colosseum
-    "https://images.unsplash.com/photo-1544986581-efac024faf62?w=1080&h=1920&fit=crop", // Roman Forum
-    "https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?w=1080&h=1920&fit=crop", // Ancient ruins
-    "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=1080&h=1920&fit=crop", // Classical sculpture
-    "https://images.unsplash.com/photo-1533105079780-92b9be482077?w=1080&h=1920&fit=crop", // Greek pillars
-  ],
-  scary: [
-    "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=1080&h=1920&fit=crop", // Dark mist
-    "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=1080&h=1920&fit=crop", // Dark eerie woods
-    "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=1080&h=1920&fit=crop", // Dark fog path
-    "https://images.unsplash.com/photo-1516339901601-2e1b62dc0c45?w=1080&h=1920&fit=crop", // Shadow night
-  ],
-  tech: [
-    "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1080&h=1920&fit=crop", // Microchip
-    "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=1080&h=1920&fit=crop", // Digital matrix
-    "https://images.unsplash.com/photo-1535223289827-42f1e9919769?w=1080&h=1920&fit=crop", // High-tech neon
-    "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1080&h=1920&fit=crop", // Cyber security
-  ],
-  space: [
-    "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1080&h=1920&fit=crop", // Nebula
-    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1080&h=1920&fit=crop", // Earth from orbit
-    "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=1080&h=1920&fit=crop", // Deep cosmic sky
-    "https://images.unsplash.com/photo-1447433589675-4aaa569f3e05?w=1080&h=1920&fit=crop", // Milky Way
-  ],
-  success: [
-    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1080&h=1920&fit=crop", // Glass skyscrapers
-    "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1080&h=1920&fit=crop", // Executive luxury
-    "https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1080&h=1920&fit=crop", // Gold watch wealth
-    "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1080&h=1920&fit=crop", // Creative studio
-  ],
-  nature: [
-    "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1080&h=1920&fit=crop", // Mountain mist
-    "https://images.unsplash.com/photo-1426604966848-d7adac402bff?w=1080&h=1920&fit=crop", // Forest valley
-    "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1080&h=1920&fit=crop", // Ocean waves
-    "https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=1080&h=1920&fit=crop", // Sunlight trees
-  ],
-};
+/**
+ * Automatically enriches and optimizes scene prompts for high-fidelity 9:16 diffusion models (FLUX / SDXL).
+ * Adds professional cinema camera optics, lighting, detail enhancements, and strict negative cues.
+ */
+export function enhanceImagePrompt(
+  rawPrompt: string,
+  visualStyleId?: string | null
+): string {
+  const prompt = (rawPrompt || "").trim();
+  if (!prompt) return "the story subject in the story location. vertical portrait 9:16, no text, no logos.";
+  if (/9:16/.test(prompt)) return prompt;
 
-function getCuratedThematicUrl(prompt: string, sceneIndex: number): string {
-  const p = prompt.toLowerCase();
-  let collection: string[] | null = null;
+  const selectedStyle = VIDEO_STYLES.find((s) => s.id === visualStyleId);
+  const style = (selectedStyle?.promptModifier || "photorealistic still")
+    .split(",")
+    .slice(0, 2)
+    .join(",");
 
-  if (
-    p.includes("rome") ||
-    p.includes("roman") ||
-    p.includes("colosseum") ||
-    p.includes("gladiator") ||
-    p.includes("history") ||
-    p.includes("ancient") ||
-    p.includes("caesar") ||
-    p.includes("empire") ||
-    p.includes("myth") ||
-    p.includes("greek")
-  ) {
-    collection = THEMATIC_COLLECTIONS.history;
-  } else if (
-    p.includes("horror") ||
-    p.includes("scary") ||
-    p.includes("dark") ||
-    p.includes("ghost") ||
-    p.includes("creepy") ||
-    p.includes("mystery") ||
-    p.includes("shadow")
-  ) {
-    collection = THEMATIC_COLLECTIONS.scary;
-  } else if (
-    p.includes("tech") ||
-    p.includes("future") ||
-    p.includes("cyber") ||
-    p.includes("ai") ||
-    p.includes("robot") ||
-    p.includes("code") ||
-    p.includes("computer")
-  ) {
-    collection = THEMATIC_COLLECTIONS.tech;
-  } else if (
-    p.includes("space") ||
-    p.includes("galaxy") ||
-    p.includes("planet") ||
-    p.includes("star") ||
-    p.includes("universe") ||
-    p.includes("cosmos")
-  ) {
-    collection = THEMATIC_COLLECTIONS.space;
-  } else if (
-    p.includes("money") ||
-    p.includes("rich") ||
-    p.includes("success") ||
-    p.includes("luxury") ||
-    p.includes("business") ||
-    p.includes("dollar") ||
-    p.includes("wealth")
-  ) {
-    collection = THEMATIC_COLLECTIONS.success;
-  } else if (
-    p.includes("nature") ||
-    p.includes("ocean") ||
-    p.includes("mountain") ||
-    p.includes("forest") ||
-    p.includes("river") ||
-    p.includes("tree")
-  ) {
-    collection = THEMATIC_COLLECTIONS.nature;
-  }
-
-  if (collection && collection.length > 0) {
-    return collection[sceneIndex % collection.length];
-  }
-
-  // Consistent, unique vertical stock image per scene
-  const hash = Math.abs(
-    prompt.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0) +
-      sceneIndex * 31
-  );
-  return `https://picsum.photos/seed/${hash}/1080/1920`;
+  return `${prompt}. ${style}. vertical portrait 9:16, no text, no logos.`;
 }
 
 /**
@@ -232,8 +143,106 @@ async function saveImageToLocal(
   }
 }
 
+const HF_IMAGE_ROUTES: Array<{ provider: "fal-ai" | "wavespeed"; model: string }> = [
+  { provider: "fal-ai", model: "black-forest-labs/FLUX.1-schnell" },
+  { provider: "wavespeed", model: "black-forest-labs/FLUX.1-schnell" },
+  { provider: "fal-ai", model: "black-forest-labs/FLUX.1-dev" },
+];
+
+async function generateWithHuggingFace(
+  prompt: string,
+  token: string,
+  seed: number,
+): Promise<{ buffer: Buffer; model: string } | null> {
+  const client = new InferenceClient(token.trim());
+
+  for (const route of HF_IMAGE_ROUTES) {
+    try {
+      const blob = await client.textToImage(
+        {
+          provider: route.provider,
+          model: route.model,
+          inputs: prompt,
+          parameters: { width: 768, height: 1344, seed },
+        },
+        { outputType: "blob", signal: AbortSignal.timeout(60000) },
+      );
+      const buffer = Buffer.from(await blob.arrayBuffer());
+      if (buffer.length > 1000) {
+        return { buffer, model: `${route.provider}/${route.model}` };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[HF_IMAGE_GEN_WARN] ${route.provider} ${route.model}: ${msg.slice(0, 200)}`);
+    }
+  }
+
+  return null;
+}
+
 /**
- * Primary Generator: Google AI Imagen (with fast timeout failover)
+ * Pollinations FLUX. The anonymous endpoint is heavily rate-limited; set
+ * POLLINATIONS_API_KEY for reliable access.
+ */
+async function generateWithPollinationsFlux(
+  prompt: string,
+  seed: number,
+): Promise<Buffer | null> {
+  try {
+    const sanitizedPrompt = prompt
+      .replace(/[\r\n]+/g, " ")
+      .replace(/[^\w\s,.'-]/g, "")
+      .trim()
+      .slice(0, 520);
+
+    const encodedPrompt = encodeURIComponent(sanitizedPrompt);
+    const endpoints = [
+      `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=720&height=1280&nologo=true&seed=${seed}`,
+      `https://image.pollinations.ai/prompt/${encodedPrompt}?model=flux&width=720&height=1280&nologo=true&seed=${seed}`,
+      `https://gen.pollinations.ai/image/${encodedPrompt}?model=turbo&width=720&height=1280&nologo=true&seed=${seed}`,
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+        const pollinationsKey = process.env.POLLINATIONS_API_KEY?.trim();
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: "image/jpeg,image/png,image/*",
+            ...(pollinationsKey ? { Authorization: `Bearer ${pollinationsKey}` } : {}),
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const contentType = response.headers.get("content-type") || "";
+          const arrayBuf = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          if (
+            buffer.length > 5000 &&
+            !contentType.includes("json") &&
+            !contentType.includes("html")
+          ) {
+            return buffer;
+          }
+        }
+      } catch {
+        // try next endpoint in array
+      }
+    }
+  } catch (err) {
+    console.warn("[POLLINATIONS_FLUX_WARN]", err);
+  }
+
+  return null;
+}
+
+/**
+ * Fallback Generator: Google AI Imagen (with fast timeout failover)
  */
 async function generateWithGoogleImagen(
   prompt: string,
@@ -242,7 +251,7 @@ async function generateWithGoogleImagen(
   try {
     const ai = new GoogleGenAI({ apiKey });
     const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), 2500)
+      setTimeout(() => resolve(null), 18000)
     );
 
     const callPromise = (async () => {
@@ -276,128 +285,71 @@ async function generateWithGoogleImagen(
 }
 
 /**
- * Secondary Generator: Pollinations with defensive fallback
- */
-async function generateWithPollinations(prompt: string): Promise<Buffer | null> {
-  try {
-    // Sanitize prompt and keep core descriptive words
-    const sanitizedPrompt = prompt
-      .replace(/[^\w\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 100);
-
-    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(sanitizedPrompt)}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "image/jpeg,image/png,image/*",
-      },
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const arrayBuf = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuf);
-      if (buffer.length > 1000) {
-        return buffer;
-      }
-    }
-  } catch {
-    // Gracefully handled by next tier
-  }
-
-  return null;
-}
-
-/**
- * Tertiary Generator: Curated High-Definition Thematic Vertical Photography
- */
-async function fetchThematicStockBuffer(
-  prompt: string,
-  sceneIndex: number
-): Promise<{ buffer: Buffer; sourceUrl: string } | null> {
-  try {
-    const imageUrl = getCuratedThematicUrl(prompt, sceneIndex);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7000);
-
-    const res = await fetch(imageUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const arrayBuf = await res.arrayBuffer();
-      const buffer = Buffer.from(arrayBuf);
-      if (buffer.length > 500) {
-        return { buffer, sourceUrl: imageUrl };
-      }
-    }
-  } catch {
-    // Fall back to direct URL
-  }
-
-  return null;
-}
-
-/**
- * Generates an image for a single scene with guaranteed zero-failure multi-tier cascade.
+ * Generates one scene image. Tries Hugging Face Inference Providers, then
+ * Pollinations, then Google Imagen. Throws instead of substituting stock photos,
+ * because an unrelated image is worse than a retry.
  */
 export async function generateSingleSceneImage(
-  prompt: string,
+  rawPrompt: string,
   sceneNumber: number,
   promptIndex: number,
   seriesId: string,
-  supabase?: SupabaseClient | null
+  visualStyle?: string | null,
+  supabase?: SupabaseClient | null,
 ): Promise<GeneratedSceneImage> {
+  const prompt = enhanceImagePrompt(rawPrompt, visualStyle);
+  const seed = stableImageSeed(seriesId, sceneNumber);
+
+  const hfToken =
+    process.env.HUGGINGFACE_API_KEY ||
+    process.env.HF_TOKEN ||
+    process.env.HUGGING_FACE_HUB_TOKEN;
+
   const googleApiKey =
     process.env.GEMINI_API_KEY ||
     process.env.GOOGLE_API_KEY ||
     process.env.GOOGLE_GENAI_API_KEY;
 
   let imageBuffer: Buffer | null = null;
-  let modelUsed: "google-imagen" | "pollinations-flux" | "photographic-stock" =
-    "photographic-stock";
-  let fallbackStockUrl: string | null = null;
+  let modelUsed: GeneratedSceneImage["modelUsed"] = "huggingface-flux";
 
-  // 1. Try Google Imagen
-  if (googleApiKey && googleApiKey !== "your_gemini_api_key_here") {
+  if (hfToken && hfToken !== "your_huggingface_token_here") {
+    const result = await generateWithHuggingFace(prompt, hfToken, seed);
+    if (result) {
+      imageBuffer = result.buffer;
+      modelUsed = "huggingface-flux";
+      console.log(`[IMAGE_GEN] Scene ${sceneNumber}: ${result.model}`);
+    }
+  }
+
+  if (!imageBuffer) {
+    imageBuffer = await generateWithPollinationsFlux(prompt, seed);
+    if (imageBuffer) {
+      modelUsed = "pollinations-flux";
+      console.log(`[IMAGE_GEN] Scene ${sceneNumber}: Pollinations FLUX`);
+    }
+  }
+
+  if (!imageBuffer && googleApiKey && googleApiKey !== "your_gemini_api_key_here") {
     imageBuffer = await generateWithGoogleImagen(prompt, googleApiKey);
     if (imageBuffer) {
       modelUsed = "google-imagen";
+      console.log(`[IMAGE_GEN] Scene ${sceneNumber}: Google Imagen`);
     }
   }
 
-  // 2. Try Pollinations with defensive timeout & error recovery
   if (!imageBuffer) {
-    imageBuffer = await generateWithPollinations(prompt);
-    if (imageBuffer) {
-      modelUsed = "pollinations-flux";
-    }
+    throw new Error(
+      `Image generation failed for scene ${sceneNumber}. Check HUGGINGFACE_API_KEY has Inference Providers credit, or set POLLINATIONS_API_KEY or GEMINI_API_KEY.`,
+    );
   }
 
-  // 3. Guaranteed High-Res Thematic Vertical Photography
-  if (!imageBuffer) {
-    const stockResult = await fetchThematicStockBuffer(prompt, promptIndex);
-    if (stockResult) {
-      imageBuffer = stockResult.buffer;
-      fallbackStockUrl = stockResult.sourceUrl;
-      modelUsed = "photographic-stock";
-    } else {
-      fallbackStockUrl = getCuratedThematicUrl(prompt, promptIndex);
-    }
-  }
-
-  // 4. Save image (Supabase Storage -> Local Public -> Direct Stock URL)
+  // Save image (Supabase Storage -> Local Public -> Direct Stock URL)
   let imageUrl: string = "";
   let storagePath: string | null = null;
   let storageType: "supabase" | "local" | "pollinations" | "data-uri" = "local";
 
-  if (imageBuffer && supabase) {
+  if (supabase) {
     const supabaseResult = await uploadImageToSupabase(
       supabase,
       imageBuffer,
@@ -411,7 +363,7 @@ export async function generateSingleSceneImage(
     }
   }
 
-  if (!imageUrl && imageBuffer) {
+  if (!imageUrl) {
     const localUrl = await saveImageToLocal(imageBuffer, seriesId, sceneNumber);
     if (localUrl) {
       imageUrl = localUrl;
@@ -420,8 +372,8 @@ export async function generateSingleSceneImage(
   }
 
   if (!imageUrl) {
-    imageUrl = fallbackStockUrl || getCuratedThematicUrl(prompt, promptIndex);
-    storageType = "pollinations";
+    imageUrl = `data:image/jpeg;base64,${imageBuffer.toString("base64")}`;
+    storageType = "data-uri";
   }
 
   return {
@@ -443,36 +395,57 @@ export async function generateSingleSceneImage(
 export async function generateImagesForScenes(
   params: GenerateImagesParams
 ): Promise<GenerateImagesOutput> {
-  const { imagePrompts, seriesId = "series-default", supabase } = params;
+  const { imagePrompts, scenes, visualAnchor, seriesId = "series-default", visualStyle, supabase } = params;
 
-  if (!imagePrompts || imagePrompts.length === 0) {
+  const fromScenes = scenes
+    ?.map((scene, index) => (scene.imagePrompt || imagePrompts[index] || scene.spokenText || "").trim())
+    .filter(Boolean);
+
+  const activePrompts = fromScenes && fromScenes.length > 0 ? fromScenes : imagePrompts.filter(Boolean);
+
+  if (activePrompts.length === 0) {
     throw new Error("No image prompts provided for image generation.");
   }
 
   const generatedImages: GeneratedSceneImage[] = [];
 
-  for (let i = 0; i < imagePrompts.length; i++) {
-    const prompt = imagePrompts[i];
+  for (let i = 0; i < activePrompts.length; i++) {
+    const prompt = activePrompts[i];
     const sceneNumber = i + 1;
 
+    console.log(
+      `[IMAGE_GEN_START] Scene ${sceneNumber}/${activePrompts.length}: "${prompt.slice(0, 80)}..."`
+    );
+
+    const anchor = visualAnchor?.trim();
+    const anchoredPrompt =
+      anchor && !prompt.toLowerCase().includes(anchor.slice(0, 24).toLowerCase())
+        ? `${anchor}. ${prompt}`
+        : prompt;
+
     const img = await generateSingleSceneImage(
-      prompt,
+      anchoredPrompt,
       sceneNumber,
       i,
       seriesId,
-      supabase
+      visualStyle,
+      supabase,
     );
     generatedImages.push(img);
 
-    // Brief pacing between scenes
-    if (i < imagePrompts.length - 1) {
-      await new Promise((r) => setTimeout(r, 200));
+    console.log(
+      `[IMAGE_GEN_DONE] Scene ${sceneNumber} succeeded via ${img.modelUsed} (${img.storageType})`
+    );
+
+    // Polite pacing to prevent endpoint rate limiting
+    if (i < activePrompts.length - 1) {
+      await new Promise((r) => setTimeout(r, 1200));
     }
   }
 
   return {
-    totalPrompts: imagePrompts.length,
-    promptsUsed: imagePrompts,
+    totalPrompts: activePrompts.length,
+    promptsUsed: activePrompts,
     generatedImages,
   };
 }
